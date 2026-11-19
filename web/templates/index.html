@@ -31,6 +31,10 @@
                     <span class="button-icon">▦</span>
                     Mẫu từ Dataset
                 </button>
+                <button class="dataset-button" id="demoVideoButton" type="button">
+                    <span class="button-icon">⚙</span>
+                    Video Băng Chuyền
+                </button>
             </div>
         </header>
 
@@ -124,6 +128,23 @@
                 <div class="metrics" id="metrics"></div>
 
                 <nav class="step-carousel" id="stepCarousel" aria-label="Các bước xử lý"></nav>
+            </div>
+            <div class="video-view hidden" id="videoView" style="margin-top: 20px;">
+                <div class="stage-card">
+                    <div class="stage-header">
+                        <div>
+                            <span class="stage-kicker">PIPELINE VIDEO REAL-TIME</span>
+                            <h2>Kết quả phân loại trên băng chuyền</h2>
+                        </div>
+                        <span class="stage-module" id="videoStatsBadge"></span>
+                    </div>
+
+                    <div style="display: flex; justify-content: center; background: #141720; border-radius: 12px; padding: 12px;">
+                        <video id="resultVideoPlayer" controls autoplay muted loop style="max-width: 100%; max-height: 460px; border-radius: 8px;"></video>
+                    </div>
+
+                    <div id="videoResultsSummary" style="margin-top: 16px; overflow-x: auto;"></div>
+                </div>
             </div>
         </section>
 

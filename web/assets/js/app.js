@@ -333,3 +333,98 @@ elements.rottenNext.addEventListener("click", () => {
     state.dataset.rottenPage++;
     renderDatasetRow("rotten");
 });
+
+
+//video
+(() => {
+    const fruitSelect = document.getElementById("fruitSelect");
+    const videoUpload = document.getElementById("videoUpload");
+    const demoVideoButton = document.getElementById("demoVideoButton");
+    const emptyState = document.getElementById("emptyState");
+    const analysisView = document.getElementById("analysisView");
+    const videoView = document.getElementById("videoView");
+    const loading = document.getElementById("loading");
+    const resultVideoPlayer = document.getElementById("resultVideoPlayer");
+    const videoStatsBadge = document.getElementById("videoStatsBadge");
+    const videoResultsSummary = document.getElementById("videoResultsSummary");
+
+    function showVideoResult(data) {
+        if (!data.ok) {
+            alert(data.error || "Xử lý video thất bại.");
+            return;
+        }
+        emptyState?.classList.add("hidden");
+        analysisView?.classList.add("hidden");
+        videoView?.classList.remove("hidden");
+
+        resultVideoPlayer.src = data.video_url;
+        videoStatsBadge.textContent = `${data.results.length} quả · ${data.fps} FPS (${data.n_frames} frames)`;
+
+        const rowsHtml = data.results.map(r => `
+            <tr style="border-bottom: 1px solid rgba(255,255,255,0.08);">
+                <td style="padding: 8px;">#${r.track_id}</td>
+                <td style="padding: 8px; font-weight: 700;">${r.label}</td>
+                <td style="padding: 8px;">${r.defect_ratio}%</td>
+                <td style="padding: 8px;">${r.n_spots}</td>
+                <td style="padding: 8px;">${(r.ripe_ratio * 100).toFixed(1)}%</td>
+                <td style="padding: 8px; opacity: 0.85;">${r.reason || "-"}</td>
+            </tr>
+        `).join("");
+
+        videoResultsSummary.innerHTML = `
+            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 14px;">
+                <thead>
+                    <tr style="border-bottom: 1px solid rgba(255,255,255,0.18); opacity: 0.75;">
+                        <th style="padding: 8px;">Track ID</th>
+                        <th style="padding: 8px;">Phân loại</th>
+                        <th style="padding: 8px;">Tỉ lệ lỗi</th>
+                        <th style="padding: 8px;">Số vết</th>
+                        <th style="padding: 8px;">Màu đạt</th>
+                        <th style="padding: 8px;">Lý do</th>
+                    </tr>
+                </thead>
+                <tbody>${rowsHtml}</tbody>
+            </table>
+        `;
+    }
+
+    // 1. Nút tải video từ máy
+    videoUpload?.addEventListener("change", async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append("video", file);
+        formData.append("fruit", fruitSelect?.value || "apple");
+
+        loading?.classList.remove("hidden");
+        try {
+            const res = await fetch("/api/analyze-video", { method: "POST", body: formData });
+            const data = await res.json();
+            showVideoResult(data);
+        } catch (err) {
+            alert("Lỗi kết nối khi xử lý video.");
+        } finally {
+            loading?.classList.add("hidden");
+            videoUpload.value = "";
+        }
+    });
+
+    // 2. Nút tạo & chạy video băng chuyền mẫu tự động
+    demoVideoButton?.addEventListener("click", async () => {
+        loading?.classList.remove("hidden");
+        try {
+            const res = await fetch("/api/demo-video", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ fruit: fruitSelect?.value || "apple" }),
+            });
+            const data = await res.json();
+            showVideoResult(data);
+        } catch (err) {
+            alert("Lỗi kết nối khi tạo video mô phỏng.");
+        } finally {
+            loading?.classList.add("hidden");
+        }
+    });
+})();

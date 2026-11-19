@@ -32,10 +32,13 @@ def read_video_frames(path):
 
 
 def create_writer(path, fps, size_wh):
-    """VideoWriter mp4v. size_wh = (width, height)."""
+    """VideoWriter hỗ trợ trình duyệt web (VP80 cho .webm, avc1/mp4v cho .mp4)."""
     import os
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    w = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*"mp4v"), fps, size_wh)
-    if not w.isOpened():
-        raise IOError(f"Không tạo được file video: {path}")
-    return w
+    ext = os.path.splitext(path)[1].lower()
+    codecs = ("VP80", "VP90") if ext == ".webm" else ("avc1", "H264", "mp4v")
+    for c in codecs:
+        w = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*c), fps, size_wh)
+        if w.isOpened():
+            return w
+    raise IOError(f"Không tạo được file video: {path}")
