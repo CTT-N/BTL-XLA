@@ -153,7 +153,7 @@ def clean_mask(mask, open_k=5, close_k=9, fill_holes=True):
     return m
 
 
-def segment_fruits(frame_pre, cfg=None):
+def segment_fruits(frame_pre, cfg=None, return_raw=False):
     """
     Input : frame BGR đã tiền xử lý (h,w,3) uint8
     Output: mask_full uint8 {0,255} (h,w); 255 = quả
@@ -168,4 +168,8 @@ def segment_fruits(frame_pre, cfg=None):
         raw = _kmeans_mask(frame_pre, cfg)
     else:
         raise ValueError(f"SEGMENT.method không hợp lệ: {method}")
-    return clean_mask(raw, cfg["open_k"], cfg["close_k"], cfg["fill_holes"])
+    
+    mask = clean_mask(raw, cfg["open_k"], cfg["close_k"], cfg["fill_holes"])
+    if return_raw:
+        return mask, raw
+    return mask

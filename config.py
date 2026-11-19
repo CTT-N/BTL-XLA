@@ -43,12 +43,14 @@ TRACKER = dict(max_dist=80, max_missing=5)
 # Dải Hue "đạt" để tính ripe_ratio. Chỉnh bằng tập calibration.
 FRUIT_CFG = {
     "apple": dict(
-        ripe_hue_ranges=[(0, 10), (165, 179), (25, 85)],  # đỏ + vàng-xanh lá (loại nâu 10..25)
-        ripe_min_s=60, ripe_min_v=70,
+        ripe_hue_ranges=[(0, 11), (14, 18), (18, 52), (165, 179)],  # đỏ + vàng-xanh + đỏ thẫm
+        ripe_s=[(60, 240), (220, 223), (70, 230), (60, 240)], 
+        ripe_v=[(85, 255), (220, 223), (90, 255), (85, 255)],
     ),
     "orange": dict(
         ripe_hue_ranges=[(8, 24)],
-        ripe_min_s=80, ripe_min_v=80,
+        ripe_s=[(80, 255)],
+        ripe_v=[(80, 255)]
     ),
 }
 COLOR = dict(hist_bins=32)

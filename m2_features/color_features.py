@@ -1,5 +1,5 @@
 """
-MODULE 2 - PHÂN TÍCH MÀU SẮC (Chương 2, 3)
+PHÂN TÍCH MÀU SẮC
     - rgb_to_hsi(): công thức RGB->HSI tự cài bằng NumPy
     - compute_color_histogram(): histogram Hue chuẩn hoá
     - extract_color_features(): mean H/S/V + tỉ lệ màu đạt
@@ -9,24 +9,24 @@ import numpy as np
 import config
 
 
-def rgb_to_hsi(bgr):
-    """
-    Chuyển ảnh BGR (uint8) sang HSI theo công thức.
-    Trả về: H (độ, 0..360), S (0..1), I (0..1) - mỗi cái là ma trận (h, w).
-        I = (R+G+B)/3
-        S = 1 - 3*min(R,G,B)/(R+G+B)
-        theta = arccos( 0.5*((R-G)+(R-B)) / sqrt((R-G)^2 + (R-B)(G-B)) )
-        H = theta nếu B <= G, ngược lại 360 - theta
-    """
-    b, g, r = [bgr[..., i].astype(np.float64) / 255.0 for i in range(3)]
-    eps = 1e-8
-    i = (r + g + b) / 3.0
-    s = 1.0 - 3.0 * np.minimum(np.minimum(r, g), b) / (r + g + b + eps)
-    num = 0.5 * ((r - g) + (r - b))
-    den = np.sqrt((r - g) ** 2 + (r - b) * (g - b)) + eps
-    theta = np.degrees(np.arccos(np.clip(num / den, -1.0, 1.0)))
-    h = np.where(b <= g, theta, 360.0 - theta)
-    return h, s, i
+# def rgb_to_hsi(bgr):
+#     """
+#     Chuyển ảnh BGR (uint8) sang HSI theo công thức.
+#     Trả về: H (độ, 0..360), S (0..1), I (0..1) - mỗi cái là ma trận (h, w).
+#         I = (R+G+B)/3
+#         S = 1 - 3*min(R,G,B)/(R+G+B)
+#         theta = arccos( 0.5*((R-G)+(R-B)) / sqrt((R-G)^2 + (R-B)(G-B)) )
+#         H = theta nếu B <= G, ngược lại 360 - theta
+#     """
+#     b, g, r = [bgr[..., i].astype(np.float64) / 255.0 for i in range(3)]
+#     eps = 1e-8
+#     i = (r + g + b) / 3.0
+#     s = 1.0 - 3.0 * np.minimum(np.minimum(r, g), b) / (r + g + b + eps)
+#     num = 0.5 * ((r - g) + (r - b))
+#     den = np.sqrt((r - g) ** 2 + (r - b) * (g - b)) + eps
+#     theta = np.degrees(np.arccos(np.clip(num / den, -1.0, 1.0)))
+#     h = np.where(b <= g, theta, 360.0 - theta)
+#     return h, s, i
 
 
 def compute_color_histogram(crop_bgr, mask, bins=32):
@@ -48,15 +48,19 @@ def _circular_mean_hue(h_vals):
     return float((m * 180.0 / (2.0 * np.pi)) % 180.0)
 
 
+
+# Color Slicing
 def ripe_pixel_mask(h, s, v, fruit_cfg):
-    """
-    Cắt màu (Color Slicing, Ch.3): True cho pixel có Hue trong dải "đạt" của loại quả,
-    đủ bão hoà (S) và đủ sáng (V). h,s,v là mảng cùng shape (thang OpenCV).
-    """
     in_range = np.zeros(h.shape, bool)
-    for lo, hi in fruit_cfg["ripe_hue_ranges"]:
-        in_range |= (h >= lo) & (h <= hi)
-    return in_range & (s >= fruit_cfg["ripe_min_s"]) & (v >= fruit_cfg["ripe_min_v"])
+    for i, (lo, hi) in enumerate(fruit_cfg["ripe_hue_ranges"]):
+        ls, hs = fruit_cfg["ripe_s"][i]
+        lv, hv = fruit_cfg["ripe_v"][i]
+        in_range |= (
+            (h >= lo) & (h <= hi)
+            & (s >= ls) & (s <= hs)
+            & (v >= lv) & (v <= hv)
+        )
+    return in_range
 
 
 def extract_color_features(crop_bgr, mask, fruit="apple", fruit_cfg=None, bins=None):

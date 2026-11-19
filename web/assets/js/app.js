@@ -388,29 +388,8 @@ elements.rottenNext.addEventListener("click", () => {
         `;
     }
 
-    // 1. Nút tải video từ máy
-    videoUpload?.addEventListener("change", async (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
 
-        const formData = new FormData();
-        formData.append("video", file);
-        formData.append("fruit", fruitSelect?.value || "apple");
-
-        loading?.classList.remove("hidden");
-        try {
-            const res = await fetch("/api/analyze-video", { method: "POST", body: formData });
-            const data = await res.json();
-            showVideoResult(data);
-        } catch (err) {
-            alert("Lỗi kết nối khi xử lý video.");
-        } finally {
-            loading?.classList.add("hidden");
-            videoUpload.value = "";
-        }
-    });
-
-    // 2. Nút tạo & chạy video băng chuyền mẫu tự động
+    // Nút tạo & chạy video băng chuyền mẫu tự động
     demoVideoButton?.addEventListener("click", async () => {
         loading?.classList.remove("hidden");
         try {

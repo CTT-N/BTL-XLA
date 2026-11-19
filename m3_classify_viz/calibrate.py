@@ -20,7 +20,7 @@ import numpy as np
 import config
 from common.utils import imread
 from m1_segmentation.pipeline_m1 import detect_fruits
-from m2_features.extract_all import extract_all_features
+from m2_features.pipeline_md2 import extract_all_features
 from .classifier import classify_rule_based, load_thresholds
 from .evaluate import binary_metrics, print_metrics, plot_confusion
 

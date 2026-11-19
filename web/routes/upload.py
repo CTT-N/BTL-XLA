@@ -11,7 +11,7 @@ from flask import Blueprint, jsonify, request, send_file
 
 
 # Import các đường dẫn và hàm xử lý từ file gốc hoặc module services
-from web.services import DATA_DIR, analyze_image
+from web.services import DATA_DIR, analyze_image, UPLOAD_DIR
 
 # Tạo Blueprint
 upload_bp = Blueprint("upload", __name__)
@@ -43,37 +43,6 @@ def uploaded_file(filename):
     mime = "video/webm" if path.suffix.lower() == ".webm" else "video/mp4"
     return send_file(path, mimetype=mime)
 
-
-@upload_bp.route("/api/analyze-video", methods=["POST"])
-def analyze_video_route():
-    fruit = request.form.get("fruit", "apple")
-    if fruit not in config.FRUIT_CFG:
-        return jsonify({"ok": False, "error": "Loại trái cây không hợp lệ."}), 400
-
-    file = request.files.get("video")
-    if file is None or not file.filename:
-        return jsonify({"ok": False, "error": "Chưa chọn tệp video."}), 400
-
-    ext = Path(file.filename).suffix.lower()
-    if ext not in (".mp4", ".avi", ".mov", ".mkv"):
-        return jsonify({"ok": False, "error": "Chỉ hỗ trợ định dạng MP4, AVI, MOV, MKV."}), 400
-
-    ts = int(time.time())
-    in_path = UPLOAD_DIR / f"in_{ts}{ext}"
-    out_name = f"out_{ts}.mp4"
-    out_path = UPLOAD_DIR / out_name
-    file.save(str(in_path))
-
-    res = run_pipeline(str(in_path), str(out_path), fruit=fruit, verbose=False)
-    return jsonify({
-        "ok": True,
-        "video_url": f"/uploads/{quote(out_name)}",
-        "fps": round(float(res["fps"]), 1),
-        "n_frames": int(res["n_frames"]),
-        "results": res["results"],
-    })
-
-
 @upload_bp.route("/api/demo-video", methods=["POST"])
 def demo_video_route():
     """Tạo nhanh video băng chuyền mô phỏng 6 quả từ dataset test và chạy pipeline M1->M2->M3."""
@@ -84,7 +53,7 @@ def demo_video_route():
 
     ts = int(time.time())
     sim_path = UPLOAD_DIR / f"sim_{fruit}_{ts}.mp4"
-    out_name = f"out_sim_{fruit}_{ts}.mp4"
+    out_name = f"out_sim_{fruit}_{ts}.webm"
     out_path = UPLOAD_DIR / out_name
 
     items = select_from_manifest(

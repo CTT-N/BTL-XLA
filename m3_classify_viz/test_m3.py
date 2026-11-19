@@ -14,7 +14,7 @@ from common.contracts import GRADE_1, GRADE_2, GRADE_3, GRADES
 from common.utils import imwrite
 from m1_segmentation.pipeline_m1 import detect_fruits
 from m1_segmentation.test_m1 import build_still
-from m2_features.extract_all import extract_all_features
+from m2_features.pipeline_md2 import extract_all_features
 from .classifier import classify_rule_based, majority_grade
 from .make_video import make_conveyor_video
 from .pipeline import run_pipeline

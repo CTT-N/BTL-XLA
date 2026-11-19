@@ -1,22 +1,22 @@
 """
-MODULE 2 - PHÁT HIỆN KHUYẾT TẬT (Chương 2, 3, 5, 6, 7)
+PHÁT HIỆN KHUYẾT TẬT
 
 Các bước:
-  1. Làm mịn Gaussian nhẹ                                                                   (Ch.2)
-  2. Co mặt nạ quả để bỏ viền (viền hay tối do bóng)                                        (Ch.5 Erosion)
+1. Làm mịn Gaussian nhẹ
+  2. Co mặt nạ quả để bỏ viền (viền hay tối do bóng)
   3. Xác định MÀU LÀNH tham chiếu:
        K-means K=2 trên màu pixel (Ch.6). Nếu 2 cụm tách xa nhau (có vùng hỏng rộng) -> chọn cụm
        "lành" = cụm có nhiều pixel nằm trong dải màu đạt của loại quả (Color Slicing, Ch.3);
        nếu không thì dùng trung vị toàn quả.
   4. Màu lành CỤC BỘ tại từng pixel = trung bình Gaussian có trọng số (loại pixel nghi hỏng, lặp 3 vòng)
      => bóng đổ mượt (rìa tối hơn tâm) KHÔNG bị nhận nhầm là vết; vết thâm sắc nét thì nổi lên.
-  5. Khoảng cách Euclid RGB:  D(z,a) = sqrt((zR-aR)^2+(zG-aG)^2+(zB-aB)^2) > D0                (Ch.3)
-     Ngưỡng cục bộ = max(Otsu(D), D0_min)                                                     (Ch.6 Otsu)
+  5. Khoảng cách Euclid RGB:  D(z,a) = sqrt((zR-aR)^2+(zG-aG)^2+(zB-aB)^2) > D0
+     Ngưỡng cục bộ = max(Otsu(D), D0_min)
      + pixel lệch xa màu lành toàn quả (d_global_min) + pixel quá tối (V < dark_v).
      Điểm chói phản quang (S thấp, V cao) bị loại trừ.
-  6. Opening xoá đốm li ti, Closing lấp lỗ                                                    (Ch.5)
-  7. Connected Component Labeling: đếm vết + diện tích từng vết                               (Ch.5)
-  8. P_loi = sum(A_benh) / A_qua * 100%                                                       (Ch.7)
+  6. Opening xoá đốm li ti, Closing lấp lỗ
+  7. Connected Component Labeling: đếm vết + diện tích từng vết
+  8. P_loi = sum(A_benh) / A_qua * 100%
 """
 import cv2
 import numpy as np

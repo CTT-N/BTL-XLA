@@ -3,7 +3,7 @@ import numpy as np
 
 import config
 from m1_segmentation.pipeline_m1 import detect_fruits
-from m2_features.extract_all import extract_all_features
+from m2_features.pipeline_md2 import extract_all_features
 from m3_classify_viz.classifier import classify_rule_based, load_thresholds
 
 from pathlib import Path
@@ -49,83 +49,59 @@ def _dataset_images(fruit):
         return []
     return sorted(test_dir.glob("*/*.png"))
 
-def _object_for_image(image_bgr, fruit):
-    objs, mask = detect_fruits(image_bgr)
-    if not objs:
-        return None, mask
-    return max(objs, key=lambda obj: cv2.countNonZero(obj.mask)), mask
 
 
 def analyze_image(image_bgr, fruit):
     original = image_bgr.copy()
-    preprocessed = __import__("m1_segmentation.preprocess", fromlist=["preprocess_frame"]).preprocess_frame(original)
 
-    obj, mask = _object_for_image(original, fruit)
-    if obj is None:
-        return {
-            "ok": False,
-            "error": "Không phát hiện được quả trong ảnh.",
-            "steps": [],
-        }
+    # 1. Pipeline M1
+    debug_out = detect_fruits(original, return_debug=True)
+    objs, mask, preprocessed, raw_mask = debug_out
+    if not objs:
+        return {"ok": False, "error": "Không phát hiện được quả trong ảnh.", "steps": []}
+    obj = max(objs, key=lambda o: cv2.countNonZero(o.mask))
 
-    features = extract_all_features(obj, fruit)
-    thresholds = load_thresholds(fruit)
-    label, reason = classify_rule_based(features, thresholds)
+    # 2. Pipeline M2
+    features, m2_masks = extract_all_features(obj, fruit, return_debug=True)
 
+    # 3. Pipeline M3
+    label, reason = classify_rule_based(features, load_thresholds(fruit))
+
+    # --- Chỉ còn phần vẽ overlay hiển thị lên Web ---
     x, y, w, h = obj.bbox
-
-    # --- BƯỚC 01: TẠO MASK THÔ (CHƯA MORPHOLOGY) & MASK SẠCH ---
-    hsv_pre = cv2.cvtColor(preprocessed, cv2.COLOR_BGR2HSV)
-    _, raw_mask = cv2.threshold(hsv_pre[..., 1], 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     raw_mask_vis = cv2.cvtColor(raw_mask, cv2.COLOR_GRAY2BGR)
     segmented_overlay = _overlay_mask(original, mask)
 
-    # --- BƯỚC 02: TẠO ẢNH CHO 3 NHÓM ĐẶC TRƯNG (MÀU CHÍN - VẾT HỎNG - HÌNH DẠNG) ---
-    # 2.1 Màu đạt chuẩn (Ripe Color) - đặt đúng vị trí trên khung kích thước gốc
-    crop = obj.crop_bgr
-    hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
-    ripe_mask = np.zeros(obj.mask.shape, dtype=np.uint8)
-    fruit_cfg = config.FRUIT_CFG[fruit]
-    for lo, hi in fruit_cfg["ripe_hue_ranges"]:
-        ripe_mask |= (((hsv[..., 0] >= lo) & (hsv[..., 0] <= hi)
-                       & (hsv[..., 1] >= fruit_cfg["ripe_min_s"])
-                       & (hsv[..., 2] >= fruit_cfg["ripe_min_v"])).astype(np.uint8) * 255)
-    ripe_mask &= obj.mask
-
-    ripe_crop = crop.copy()
-    ripe_crop[ripe_mask > 0] = (
-        ripe_crop[ripe_mask > 0] * 0.45 + np.array([54, 188, 148], dtype=np.float32) * 0.55
-    ).astype(np.uint8)
+    # 2.1 Ảnh màu chín
+    ripe_crop = obj.crop_bgr.copy()
+    ripe_crop[m2_masks["ripe_mask"] > 0] = (ripe_crop[m2_masks["ripe_mask"] > 0] * 0.45 + np.array([54, 188, 148]) * 0.55).astype(np.uint8)
     ripe_crop[obj.mask == 0] = (32, 36, 48)
-
-    # Tạo khung nền tối đúng bằng kích thước ảnh gốc rồi đặt quả vào đúng tọa độ (x, y)
     ripe_overlay = np.full(original.shape, (32, 36, 48), dtype=np.uint8)
     ripe_overlay[y:y + h, x:x + w] = ripe_crop
 
-    # 2.2 Phát hiện vết hỏng (Defect Detection)
+    # 2.2 Ảnh vết hỏng
     defect_overlay = original.copy()
-    dm = features["defect_mask"]
     full_dm = np.zeros(original.shape[:2], dtype=np.uint8)
-    full_dm[y:y + h, x:x + w] = dm
+    full_dm[y:y + h, x:x + w] = m2_masks["defect_mask"]
     defect_overlay[full_dm > 0] = (24, 72, 255)
     contours_def, _ = cv2.findContours(full_dm, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     cv2.drawContours(defect_overlay, contours_def, -1, (0, 230, 255), 2)
 
-    # 2.3 Đặc trưng hình dạng (Contour + Bounding Box + Trọng tâm)
-    shape_vis = _draw_boundary(original, obj)
+    # 2.3 Ảnh hình dạng
+    shape_vis = original.copy()
+    cv2.drawContours(shape_vis, [obj.contour + np.array([[[x, y]]])], -1, (35, 220, 170), 2)
     cv2.rectangle(shape_vis, (x, y), (x + w, y + h), (255, 200, 0), 1)
     M = cv2.moments(obj.mask)
     if M["m00"] > 0:
-        cx, cy = int(x + M["m10"] / M["m00"]), int(y + M["m01"] / M["m00"])
-        cv2.circle(shape_vis, (cx, cy), 4, (0, 0, 255), -1)
+        cv2.circle(shape_vis, (int(x + M["m10"] / M["m00"]), int(y + M["m01"] / M["m00"])), 4, (0, 0, 255), -1)
 
-    # --- BƯỚC 03: ẢNH KẾT QUẢ PHÂN LOẠI ---
+    # 3. Ảnh kết quả
     grade_colors = {"LOAI 1": (54, 188, 148), "LOAI 2": (48, 170, 255), "LOAI 3": (72, 72, 255)}
     result = original.copy()
     cv2.rectangle(result, (x, y), (x + w, y + h), grade_colors.get(label, (255, 255, 255)), 3)
-    cv2.putText(result, label, (x, max(32, y - 12)), cv2.FONT_HERSHEY_SIMPLEX,
-                0.8, grade_colors.get(label, (255, 255, 255)), 2, cv2.LINE_AA)
-
+    cv2.putText(result, label, (x, max(32, y - 12)), cv2.FONT_HERSHEY_SIMPLEX, 0.8, grade_colors.get(label, (255, 255, 255)), 2, cv2.LINE_AA)
+    
+    
     steps = [
         {
             "number": "01",

@@ -17,7 +17,7 @@ from common.contracts import GRADE_1, GRADE_2, GRADE_3, is_pass
 from m1_segmentation.pipeline_m1 import detect_fruits
 from m1_segmentation.objects import is_fully_visible
 from m1_segmentation.tracker import CentroidTracker
-from m2_features.extract_all import extract_all_features
+from m2_features.pipeline_md2 import extract_all_features
 from .classifier import classify_rule_based, majority_grade, load_thresholds
 from .video_io import get_video_info, read_video_frames, create_writer
 from .visualize import draw_overlay

@@ -13,7 +13,7 @@ import config
 from common.contracts import FruitObject
 from common.mock import make_mock_fruit
 from common.utils import imread, imwrite, montage
-from .extract_all import extract_all_features
+from .pipeline_md2 import extract_all_features
 
 
 def _overlay(obj, feat):
