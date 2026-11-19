@@ -19,7 +19,7 @@ from flask import Flask, jsonify, render_template, request, send_file
 import config
 from m1_segmentation.pipeline_m1 import detect_fruits
 from m2_features.extract_all import extract_all_features
-
+from m3_classify_viz.classifier import classify_rule_based, load_thresholds
 
 
 WEB_DIR = Path(__file__).resolve().parent
@@ -68,6 +68,134 @@ def _object_for_image(image_bgr, fruit):
         return None, mask
     return max(objs, key=lambda obj: cv2.countNonZero(obj.mask)), mask
 
+
+def analyze_image(image_bgr, fruit):
+    original = image_bgr.copy()
+    preprocessed = __import__("m1_segmentation.preprocess", fromlist=["preprocess_frame"]).preprocess_frame(original)
+
+    obj, mask = _object_for_image(original, fruit)
+    if obj is None:
+        return {
+            "ok": False,
+            "error": "Không phát hiện được quả trong ảnh.",
+            "steps": [],
+        }
+
+    features = extract_all_features(obj, fruit)
+    thresholds = load_thresholds(fruit)
+    label, reason = classify_rule_based(features, thresholds)
+
+    x, y, w, h = obj.bbox
+    segmented = _draw_boundary(original, obj)
+    segmented_overlay = _overlay_mask(original, mask)
+    defect_overlay = original.copy()
+    dm = features["defect_mask"]
+    full_dm = np.zeros(original.shape[:2], dtype=np.uint8)
+    full_dm[y:y + h, x:x + w] = dm
+    defect_overlay[full_dm > 0] = (24, 72, 255)
+    contours, _ = cv2.findContours(full_dm, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cv2.drawContours(defect_overlay, contours, -1, (0, 230, 255), 2)
+
+    crop = obj.crop_bgr
+    hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+    ripe_mask = np.zeros(obj.mask.shape, dtype=np.uint8)
+    inside = obj.mask > 0
+    fruit_cfg = config.FRUIT_CFG[fruit]
+    for lo, hi in fruit_cfg["ripe_hue_ranges"]:
+        ripe_mask |= (((hsv[..., 0] >= lo) & (hsv[..., 0] <= hi)
+                       & (hsv[..., 1] >= fruit_cfg["ripe_min_s"])
+                       & (hsv[..., 2] >= fruit_cfg["ripe_min_v"])).astype(np.uint8) * 255)
+    ripe_mask &= obj.mask
+    ripe_overlay = crop.copy()
+    ripe_overlay[ripe_mask > 0] = (
+        ripe_overlay[ripe_mask > 0] * 0.45 + np.array([54, 188, 148], dtype=np.float32) * 0.55
+    ).astype(np.uint8)
+    ripe_overlay[obj.mask == 0] = (32, 36, 48)
+
+    grade_colors = {"LOAI 1": (54, 188, 148), "LOAI 2": (48, 170, 255), "LOAI 3": (72, 72, 255)}
+    result = original.copy()
+    cv2.rectangle(result, (x, y), (x + w, y + h), grade_colors.get(label, (255, 255, 255)), 3)
+    cv2.putText(result, label, (x, max(32, y - 12)), cv2.FONT_HERSHEY_SIMPLEX,
+                0.8, grade_colors.get(label, (255, 255, 255)), 2, cv2.LINE_AA)
+
+    steps = [
+        {
+            "number": "01",
+            "title": "Ảnh gốc",
+            "subtitle": "Nạp đầu vào",
+            "description": "Ảnh trái cây dạng BGR được đọc từ dataset hoặc tệp tải lên.",
+            "before": _encode_image(original),
+            "after": _encode_image(original),
+            "metrics": [{"label": "Kích thước", "value": f"{original.shape[1]} x {original.shape[0]}"}],
+        },
+        {
+            "number": "02",
+            "title": "Tiền xử lý",
+            "subtitle": "Module 1",
+            "description": "Median blur, Gaussian blur và các phép chỉnh sáng được áp dụng để giảm nhiễu trước khi tách nền.",
+            "before": _encode_image(original),
+            "after": _encode_image(preprocessed),
+            "metrics": [
+                {"label": "Median", "value": f"{config.PREPROCESS['median_k']} px"},
+                {"label": "Gaussian", "value": f"{config.PREPROCESS['gaussian_k']} px"},
+            ],
+        },
+        {
+            "number": "03",
+            "title": "Tách nền",
+            "subtitle": "Mặt nạ trái cây",
+            "description": "Ước lượng nền, tính khoảng cách màu, Morphology và Connected Component để tìm quả.",
+            "before": _encode_image(preprocessed),
+            "after": _encode_image(segmented_overlay),
+            "metrics": [
+                {"label": "Phương pháp", "value": config.SEGMENT["method"]},
+                {"label": "Diện tích", "value": f"{cv2.countNonZero(obj.mask):,} px"},
+            ],
+        },
+        {
+            "number": "04",
+            "title": "Trích đặc trưng",
+            "subtitle": "Màu · khuyết tật · hình dạng",
+            "description": "Tách vùng màu đạt, phát hiện vết hỏng và tính circularity, diện tích, đường kính hiệu dụng.",
+            "before": _encode_image(segmented),
+            "after": _encode_image(defect_overlay),
+            "metrics": [
+                {"label": "Màu đạt", "value": f"{features['ripe_ratio'] * 100:.1f}%"},
+                {"label": "Vết hỏng", "value": f"{features['defect_ratio']:.1f}%"},
+                {"label": "Circularity", "value": f"{features['circularity']:.3f}"},
+            ],
+        },
+        {
+            "number": "05",
+            "title": "Phân loại",
+            "subtitle": "Module 3",
+            "description": "Luật Rule-based so sánh các ngưỡng đã hiệu chỉnh để chọn Loại 1, 2 hoặc 3.",
+            "before": _encode_image(defect_overlay),
+            "after": _encode_image(result),
+            "metrics": [
+                {"label": "Kết quả", "value": label},
+                {"label": "Điểm vết", "value": f"{features['n_spots']} vết"},
+                {"label": "Lý do", "value": reason},
+            ],
+        },
+    ]
+
+    return {
+        "ok": True,
+        "label": label,
+        "fruit": fruit,
+        "reason": reason,
+        "features": {
+            "ripe_ratio": round(float(features["ripe_ratio"]), 4),
+            "defect_ratio": round(float(features["defect_ratio"]), 3),
+            "n_spots": int(features["n_spots"]),
+            "circularity": round(float(features["circularity"]), 4),
+            "area_px": int(features["area_px"]),
+        },
+        "steps": steps,
+    }
+
+
 def _dataset_images(fruit):
     test_dir = DATA_DIR / "test" / fruit
     if not test_dir.exists():
@@ -109,6 +237,41 @@ def dataset_image(fruit, label, filename):
     mimetype = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
     return send_file(path, mimetype=mimetype)
 
+
+@app.route("/api/analyze-dataset", methods=["POST"])
+def analyze_dataset():
+    data = request.get_json(silent=True) or {}
+    fruit = data.get("fruit", "apple")
+    path = data.get("path")
+    if fruit not in config.FRUIT_CFG:
+        return jsonify({"ok": False, "error": "Loại trái cây không hợp lệ."}), 400
+    resolved = (ROOT / path).resolve() if path else None
+    if resolved is None or DATA_DIR.resolve() not in resolved.parents or not resolved.exists():
+        return jsonify({"ok": False, "error": "Đường dẫn ảnh không hợp lệ."}), 400
+    image = cv2.imread(str(resolved), cv2.IMREAD_COLOR)
+    if image is None:
+        return jsonify({"ok": False, "error": "Không thể đọc ảnh."}), 400
+    return jsonify(analyze_image(image, fruit))
+
+
+@app.route("/api/analyze-upload", methods=["POST"])
+def analyze_upload():
+    fruit = request.form.get("fruit", "apple")
+    if fruit not in config.FRUIT_CFG:
+        return jsonify({"ok": False, "error": "Loại trái cây không hợp lệ."}), 400
+    file = request.files.get("image")
+    if file is None or not file.filename:
+        return jsonify({"ok": False, "error": "Chưa chọn tệp ảnh."}), 400
+
+    ext = Path(file.filename).suffix.lower()
+    if ext not in (".jpg", ".jpeg", ".png", ".bmp", ".webp"):
+        return jsonify({"ok": False, "error": "Chỉ hỗ trợ JPG, PNG, BMP hoặc WEBP."}), 400
+
+    data = file.read()
+    image = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if image is None:
+        return jsonify({"ok": False, "error": "Không thể giải mã ảnh."}), 400
+    return jsonify(analyze_image(image, fruit))
 
 
 if __name__ == "__main__":
