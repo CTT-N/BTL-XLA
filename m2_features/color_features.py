@@ -1,8 +1,8 @@
 """
 MODULE 2 - PHÂN TÍCH MÀU SẮC (Chương 2, 3)
-    - rgb_to_hsi(): công thức RGB->HSI tự cài bằng NumPy (Ch.3) - để đưa vào báo cáo/so sánh với OpenCV
-    - compute_color_histogram(): histogram Hue chuẩn hoá (Ch.2, 3)
-    - extract_color_features(): mean H/S/V + tỉ lệ màu đạt (ripe_ratio)
+    - rgb_to_hsi(): công thức RGB->HSI tự cài bằng NumPy
+    - compute_color_histogram(): histogram Hue chuẩn hoá
+    - extract_color_features(): mean H/S/V + tỉ lệ màu đạt
 """
 import cv2
 import numpy as np
@@ -11,7 +11,7 @@ import config
 
 def rgb_to_hsi(bgr):
     """
-    Chuyển ảnh BGR (uint8) sang HSI theo công thức Chương 3 (cài từ đầu bằng NumPy).
+    Chuyển ảnh BGR (uint8) sang HSI theo công thức.
     Trả về: H (độ, 0..360), S (0..1), I (0..1) - mỗi cái là ma trận (h, w).
         I = (R+G+B)/3
         S = 1 - 3*min(R,G,B)/(R+G+B)

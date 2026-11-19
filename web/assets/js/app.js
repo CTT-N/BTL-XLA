@@ -1,8 +1,17 @@
+const PAGE_SIZE = 10;
+
 const state = {
     fruit: "apple",
-    steps: [],
-    currentStep: 0,
-    datasetImages: [],
+    rawSteps: [],
+    slides: [],
+    currentSlide: 0,
+    dataset: {
+        healthy: [],
+        rotten: [],
+        healthyPage: 0,
+        rottenPage: 0,
+        activePath: null,
+    },
 };
 
 const elements = {
@@ -14,10 +23,20 @@ const elements = {
     analysisView: document.querySelector("#analysisView"),
     datasetStrip: document.querySelector("#datasetStrip"),
     datasetCount: document.querySelector("#datasetCount"),
-    thumbnailRow: document.querySelector("#thumbnailRow"),
+    healthyRow: document.querySelector("#healthyRow"),
+    rottenRow: document.querySelector("#rottenRow"),
+    healthyPageInfo: document.querySelector("#healthyPageInfo"),
+    rottenPageInfo: document.querySelector("#rottenPageInfo"),
+    healthyPrev: document.querySelector("#healthyPrev"),
+    healthyNext: document.querySelector("#healthyNext"),
+    rottenPrev: document.querySelector("#rottenPrev"),
+    rottenNext: document.querySelector("#rottenNext"),
     stageKicker: document.querySelector("#stageKicker"),
     stageTitle: document.querySelector("#stageTitle"),
     stageModule: document.querySelector("#stageModule"),
+    resultBadge: document.querySelector("#resultBadge"),
+    beforeLabel: document.querySelector("#beforeLabel"),
+    afterLabel: document.querySelector("#afterLabel"),
     beforeImage: document.querySelector("#beforeImage"),
     afterImage: document.querySelector("#afterImage"),
     stepDescription: document.querySelector("#stepDescription"),
@@ -32,13 +51,74 @@ function setLoading(value) {
     elements.loading.classList.toggle("hidden", !value);
 }
 
+// Chuyển đổi cấu trúc steps + substep thành chuỗi slide Before -> After nối tiếp nhau
+function buildSlides(steps) {
+    const slides = [];
+    let prevImg = null;
+    let prevTitle = "Ảnh gốc";
+
+    steps.forEach((step, moduleIndex) => {
+        if (Array.isArray(step.substep) && step.substep.length > 0) {
+            step.substep.forEach((sub, subIndex) => {
+                const currentImg = sub.img || step.after || step.before;
+                const beforeImg = sub.before || prevImg || currentImg;
+                const beforeText = (moduleIndex === 0 && subIndex === 0)
+                    ? "Đầu vào gốc"
+                    : `Trước (${prevTitle})`;
+
+                slides.push({
+                    moduleIndex,
+                    kicker: `Bước ${step.number} · ${step.title}`,
+                    title: sub.title,
+                    moduleBadge: step.subtitle,
+                    beforeLabel: beforeText,
+                    afterLabel: sub.title,
+                    before: beforeImg,
+                    after: currentImg,
+                    description: sub.description || step.description || "",
+                    metrics: sub.metrics || step.metrics || [],
+                });
+
+                prevImg = currentImg;
+                prevTitle = sub.title;
+            });
+        } else {
+            const beforeImg = step.before || prevImg;
+            const afterImg = step.after || step.img;
+            slides.push({
+                moduleIndex,
+                kicker: `Bước ${step.number}`,
+                title: step.title,
+                moduleBadge: step.subtitle,
+                beforeLabel: "Tổng hợp vùng lỗi",
+                afterLabel: "Kết quả phân loại",
+                before: beforeImg,
+                after: afterImg,
+                description: step.description || "",
+                metrics: step.metrics || [],
+            });
+            prevImg = afterImg;
+            prevTitle = step.title;
+        }
+    });
+
+    return slides;
+}
+
 function showAnalysis(payload) {
     if (!payload.ok) {
         alert(payload.error || "Không thể phân tích ảnh.");
         return;
     }
-    state.steps = payload.steps;
-    state.currentStep = 0;
+    state.rawSteps = payload.steps || [];
+    state.slides = buildSlides(state.rawSteps);
+    state.currentSlide = 0;
+
+    if (elements.resultBadge && payload.label) {
+        elements.resultBadge.style.display = "inline-block";
+        elements.resultBadge.textContent = `Kết quả: ${payload.label}`;
+    }
+
     elements.emptyState.classList.add("hidden");
     elements.analysisView.classList.remove("hidden");
     renderCarousel();
@@ -47,11 +127,11 @@ function showAnalysis(payload) {
 
 function renderCarousel() {
     elements.stepCarousel.innerHTML = "";
-    state.steps.forEach((step, index) => {
+    state.rawSteps.forEach((step, moduleIndex) => {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "step-tab";
-        button.dataset.step = index;
+        button.dataset.module = moduleIndex;
         button.innerHTML = `
             <span class="step-number">${step.number}</span>
             <span>
@@ -60,25 +140,32 @@ function renderCarousel() {
             </span>
         `;
         button.addEventListener("click", () => {
-            state.currentStep = index;
-            renderStep();
+            const targetIdx = state.slides.findIndex(s => s.moduleIndex === moduleIndex);
+            if (targetIdx !== -1) {
+                state.currentSlide = targetIdx;
+                renderStep();
+            }
         });
         elements.stepCarousel.appendChild(button);
     });
 }
 
 function renderStep() {
-    const step = state.steps[state.currentStep];
-    if (!step) return;
+    const slide = state.slides[state.currentSlide];
+    if (!slide) return;
 
-    elements.stageKicker.textContent = `Bước ${step.number}`;
-    elements.stageTitle.textContent = step.title;
-    elements.stageModule.textContent = step.subtitle;
-    elements.beforeImage.src = step.before;
-    elements.afterImage.src = step.after;
-    elements.stepDescription.textContent = step.description;
+    elements.stageKicker.textContent = `${slide.kicker} (${state.currentSlide + 1}/${state.slides.length})`;
+    elements.stageTitle.textContent = slide.title;
+    elements.stageModule.textContent = slide.moduleBadge;
 
-    elements.metrics.innerHTML = step.metrics.map(metric => `
+    if (elements.beforeLabel) elements.beforeLabel.textContent = slide.beforeLabel;
+    if (elements.afterLabel) elements.afterLabel.textContent = slide.afterLabel;
+
+    elements.beforeImage.src = slide.before;
+    elements.afterImage.src = slide.after;
+    elements.stepDescription.textContent = slide.description;
+
+    elements.metrics.innerHTML = (slide.metrics || []).map(metric => `
         <div class="metric">
             <span>${metric.label}</span>
             <strong title="${metric.value}">${metric.value}</strong>
@@ -86,7 +173,38 @@ function renderStep() {
     `).join("");
 
     document.querySelectorAll(".step-tab").forEach((tab, index) => {
-        tab.classList.toggle("active", index === state.currentStep);
+        tab.classList.toggle("active", index === slide.moduleIndex);
+    });
+}
+
+function renderDatasetRow(group) {
+    const list = state.dataset[group];
+    const pageKey = `${group}Page`;
+    const rowEl = elements[`${group}Row`];
+    const infoEl = elements[`${group}PageInfo`];
+
+    const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+    state.dataset[pageKey] = Math.max(0, Math.min(state.dataset[pageKey], totalPages - 1));
+
+    const start = state.dataset[pageKey] * PAGE_SIZE;
+    const slice = list.slice(start, start + PAGE_SIZE);
+
+    infoEl.textContent = list.length
+        ? `${start + 1}–${start + slice.length} / ${list.length}`
+        : "0 ảnh";
+
+    rowEl.innerHTML = "";
+    slice.forEach((image) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "thumbnail";
+        if (image.path === state.dataset.activePath) {
+            button.classList.add("active");
+        }
+        button.title = `${image.label.toUpperCase()} — ${image.name}`;
+        button.innerHTML = `<img src="${image.url}" alt="${image.name}" loading="lazy">`;
+        button.addEventListener("click", () => analyzeDatasetImage(image));
+        rowEl.appendChild(button);
     });
 }
 
@@ -96,23 +214,21 @@ async function loadDataset() {
     try {
         const response = await fetch(`/api/dataset?fruit=${encodeURIComponent(state.fruit)}`);
         const data = await response.json();
-        state.datasetImages = data.images;
+
+        state.dataset.healthy = data.healthy || [];
+        state.dataset.rotten = data.rotten || [];
+        state.dataset.healthyPage = 0;
+        state.dataset.rottenPage = 0;
+
         elements.datasetStrip.classList.remove("hidden");
-        elements.datasetCount.textContent = `${data.images.length} ảnh`;
-        elements.thumbnailRow.innerHTML = "";
+        elements.datasetCount.textContent = `Tổng ${data.total} ảnh (${state.dataset.healthy.length} tươi · ${state.dataset.rotten.length} hỏng)`;
 
-        data.images.forEach((image, index) => {
-            const button = document.createElement("button");
-            button.type = "button";
-            button.className = "thumbnail";
-            button.title = image.name;
-            button.innerHTML = `<img src="${image.url}" alt="${image.name}">`;
-            button.addEventListener("click", () => analyzeDatasetImage(index));
-            elements.thumbnailRow.appendChild(button);
-        });
+        renderDatasetRow("healthy");
+        renderDatasetRow("rotten");
 
-        if (data.images.length) {
-            await analyzeDatasetImage(0);
+        const firstImage = state.dataset.healthy[0] || state.dataset.rotten[0];
+        if (firstImage) {
+            await analyzeDatasetImage(firstImage);
         } else {
             alert("Không tìm thấy ảnh trong tập test.");
         }
@@ -123,12 +239,12 @@ async function loadDataset() {
     }
 }
 
-async function analyzeDatasetImage(index) {
-    const image = state.datasetImages[index];
+async function analyzeDatasetImage(image) {
     if (!image) return;
-    document.querySelectorAll(".thumbnail").forEach((thumb, i) => {
-        thumb.classList.toggle("active", i === index);
-    });
+    state.dataset.activePath = image.path;
+    renderDatasetRow("healthy");
+    renderDatasetRow("rotten");
+
     setLoading(true);
     try {
         const response = await fetch("/api/analyze-dataset", {
@@ -162,11 +278,16 @@ async function uploadImage(file) {
     }
 }
 
+// --- ĐĂNG KÝ SỰ KIỆN ---
 elements.datasetButton.addEventListener("click", loadDataset);
+elements.imageUpload.addEventListener("change", event => uploadImage(event.target.files[0]));
+
 elements.fruitSelect.addEventListener("change", () => {
     state.fruit = elements.fruitSelect.value;
+    if (!elements.datasetStrip.classList.contains("hidden")) {
+        loadDataset();
+    }
 });
-elements.imageUpload.addEventListener("change", event => uploadImage(event.target.files[0]));
 
 ["dragenter", "dragover"].forEach(name => {
     elements.uploadCard.addEventListener(name, event => {
@@ -186,10 +307,29 @@ elements.uploadCard.addEventListener("drop", event => {
 });
 
 elements.prevStep.addEventListener("click", () => {
-    state.currentStep = (state.currentStep - 1 + state.steps.length) % state.steps.length;
+    if (!state.slides.length) return;
+    state.currentSlide = (state.currentSlide - 1 + state.slides.length) % state.slides.length;
     renderStep();
 });
 elements.nextStep.addEventListener("click", () => {
-    state.currentStep = (state.currentStep + 1) % state.steps.length;
+    if (!state.slides.length) return;
+    state.currentSlide = (state.currentSlide + 1) % state.slides.length;
     renderStep();
+});
+
+elements.healthyPrev.addEventListener("click", () => {
+    state.dataset.healthyPage--;
+    renderDatasetRow("healthy");
+});
+elements.healthyNext.addEventListener("click", () => {
+    state.dataset.healthyPage++;
+    renderDatasetRow("healthy");
+});
+elements.rottenPrev.addEventListener("click", () => {
+    state.dataset.rottenPage--;
+    renderDatasetRow("rotten");
+});
+elements.rottenNext.addEventListener("click", () => {
+    state.dataset.rottenPage++;
+    renderDatasetRow("rotten");
 });

@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Fruit Vision Lab</title>
+    <title>Fruit Vision Lab — Phân loại chất lượng trái cây</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
@@ -16,37 +16,37 @@
                 <span class="brand-mark">FV</span>
                 <span>
                     <strong>Fruit Vision</strong>
-                    <small>CLASSIFICATION LAB</small>
+                    <small>DIGITAL IMAGE PROCESSING LAB</small>
                 </span>
             </a>
             <div class="top-actions">
                 <label class="fruit-select">
-                    <span>Loại trái</span>
+                    <span>Loại quả</span>
                     <select id="fruitSelect">
-                        <option value="apple">Táo</option>
-                        <option value="orange">Cam</option>
+                        <option value="apple">Táo (Apple)</option>
+                        <option value="orange">Cam (Orange)</option>
                     </select>
                 </label>
                 <button class="dataset-button" id="datasetButton" type="button">
                     <span class="button-icon">▦</span>
-                    Thử dataset
+                    Mẫu từ Dataset
                 </button>
             </div>
         </header>
 
         <section class="hero">
             <div class="hero-copy">
-                <p class="eyebrow">KHÁM PHÁ PIPELINE</p>
-                <h1>Thấy rõ từng bước<br><em>xử lý trái cây.</em></h1>
-                <p class="intro">Nạp ảnh từ tập test có sẵn hoặc tải ảnh của bạn lên để quan sát toàn bộ luồng M1 → M2 → M3.</p>
+                <p class="eyebrow">PIPELINE XỬ LÝ ẢNH SỐ</p>
+                <h1>Quan sát từng bước<br><em>phân loại trái cây.</em></h1>
+                <p class="intro">Chọn ảnh từ tập kiểm thử hoặc tải ảnh thực tế lên để theo dõi trực quan toàn bộ quy trình: Tiền xử lý &amp; Tách nền (M1) → Trích đặc trưng (M2) → Phân loại (M3).</p>
             </div>
 
             <label class="upload-card" id="uploadCard">
                 <input type="file" id="imageUpload" accept=".jpg,.jpeg,.png,.bmp,.webp">
                 <span class="upload-icon">↥</span>
                 <span>
-                    <strong>Tải ảnh của bạn</strong>
-                    <small>Kéo thả hoặc nhấn để chọn JPG, PNG</small>
+                    <strong>Tải ảnh lên để kiểm tra</strong>
+                    <small>Kéo thả hoặc nhấn chọn tệp (JPG, PNG, WEBP)</small>
                 </span>
             </label>
         </section>
@@ -55,42 +55,70 @@
             <div class="empty-state" id="emptyState">
                 <span class="empty-orbit"></span>
                 <h2>Sẵn sàng phân tích</h2>
-                <p>Chọn ảnh từ dataset hoặc tải một ảnh lên để bắt đầu.</p>
+                <p>Nhấn <strong>"Mẫu từ Dataset"</strong> hoặc tải ảnh lên ở góc trên bên phải để bắt đầu chạy pipeline.</p>
             </div>
 
             <div class="analysis-view hidden" id="analysisView">
                 <div class="dataset-strip hidden" id="datasetStrip">
                     <div class="strip-heading">
-                        <span>Ảnh trong dataset</span>
+                        <span>Tập kiểm thử (Test Set)</span>
                         <span id="datasetCount"></span>
                     </div>
-                    <div class="thumbnail-row" id="thumbnailRow"></div>
+
+                    <!-- Hàng 1: Healthy -->
+                    <div class="dataset-group" style="margin-top: 10px;">
+                        <div class="strip-heading" style="margin-bottom: 6px;">
+                            <span style="color: #36bc94; font-weight: 600;">Healthy</span>
+                            <span id="healthyPageInfo" style="font-size: 12px; opacity: 0.75;"></span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px; justify-content: center;">
+                            <button type="button" class="nav-arrow" id="healthyPrev" aria-label="Trang trước" style="width: 34px; height: 34px; flex-shrink: 0;">«</button>
+                            <div class="thumbnail-row" id="healthyRow" style="flex: 0.7;"></div>
+                            <button type="button" class="nav-arrow" id="healthyNext" aria-label="Trang sau" style="width: 34px; height: 34px; flex-shrink: 0;">»</button>
+                        </div>
+                    </div>
+
+                    <!-- Hàng 2: Rotten -->
+                    <div class="dataset-group" style="margin-top: 12px;">
+                        <div class="strip-heading" style="margin-bottom: 6px;">
+                            <span style="color: #ff4848; font-weight: 600;">Rotten</span>
+                            <span id="rottenPageInfo" style="font-size: 12px; opacity: 0.75;"></span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px; justify-content: center;">
+                            <button type="button" class="nav-arrow" id="rottenPrev" aria-label="Trang trước" style="width: 34px; height: 34px; flex-shrink: 0;">«</button>
+                            <div class="thumbnail-row" id="rottenRow" style="flex: 0.7;"></div>
+                            <button type="button" class="nav-arrow" id="rottenNext" aria-label="Trang sau" style="width: 34px; height: 34px; flex-shrink: 0;">»</button>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="image-stage">
-                    <button class="nav-arrow nav-prev" id="prevStep" type="button" aria-label="Bước trước">‹</button>
+                    <button class="nav-arrow nav-prev" id="prevStep" type="button" aria-label="Bước trước" title="Bước trước">‹</button>
                     <div class="stage-card">
                         <div class="stage-header">
                             <div>
-                                <span class="stage-kicker" id="stageKicker">Bước 01</span>
+                                <span class="stage-kicker" id="stageKicker">Bước 01 · 1.1</span>
                                 <h2 id="stageTitle">Ảnh gốc</h2>
                             </div>
-                            <span class="stage-module" id="stageModule">Đầu vào</span>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <span class="stage-module" id="resultBadge" style="display: none;"></span>
+                                <span class="stage-module" id="stageModule">Module 1</span>
+                            </div>
                         </div>
                         <div class="comparison" id="comparison">
                             <div class="image-panel">
-                                <span>Before</span>
+                                <span id="beforeLabel">Trước xử lý</span>
                                 <img id="beforeImage" alt="Ảnh trước xử lý">
                             </div>
                             <div class="image-divider"></div>
                             <div class="image-panel">
-                                <span>After</span>
+                                <span id="afterLabel">Sau xử lý</span>
                                 <img id="afterImage" alt="Ảnh sau xử lý">
                             </div>
                         </div>
                         <p class="step-description" id="stepDescription"></p>
                     </div>
-                    <button class="nav-arrow nav-next" id="nextStep" type="button" aria-label="Bước tiếp">›</button>
+                    <button class="nav-arrow nav-next" id="nextStep" type="button" aria-label="Bước tiếp" title="Bước tiếp theo">›</button>
                 </div>
 
                 <div class="metrics" id="metrics"></div>
@@ -101,7 +129,7 @@
 
         <div class="loading hidden" id="loading">
             <span class="spinner"></span>
-            <p>Đang chạy pipeline...</p>
+            <p>Đang chạy pipeline xử lý ảnh...</p>
         </div>
     </main>
     <script src="/assets/js/app.js"></script>

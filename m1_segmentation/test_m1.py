@@ -1,5 +1,5 @@
 """
-TEST MODULE 1 (chạy ở thư mục gốc dự án):
+TEST MODULE 1 - ẢNH TĨNH (chạy ở thư mục gốc dự án):
     python -m m1_segmentation.test_m1                                    # test bằng cảnh giả lập
     python -m m1_segmentation.test_m1 --folder data/calib/apple/healthy  # xem tách nền trên ảnh thật
     python -m m1_segmentation.test_m1 --folder data/calib/orange/rotten --method kmeans --n 12
@@ -14,15 +14,14 @@ import config
 from common.mock import make_mock_fruit
 from common.utils import imread, imwrite, montage
 from .pipeline_m1 import detect_fruits
-from .objects import extract_boundary, is_fully_visible
-from .tracker import CentroidTracker
+from .objects import extract_boundary
 
 BG_GRAY = (232, 230, 228)        # xám ngả trắng (BGR)
 BG_BLUE = (244, 232, 218)        # lam nhạt ngả trắng (BGR: B cao hơn R)
 
 
 def build_scene(bg, fruit_specs, size=(960, 540), noise=3.0, shadow=True, seed=0, vignette=0.0):
-    """Dựng 1 frame: nền + bóng đổ + các quả. Trả về (frame, [mask_gt_full,...])."""
+    """Dựng 1 ảnh giả lập: nền + bóng đổ + các quả. Trả về (frame, [mask_gt_full,...])."""
     W, H = size
     rng = np.random.default_rng(seed)
     scene = np.full((H, W, 3), bg, np.float32)
@@ -88,7 +87,8 @@ def build_still(size_fruit, kind, vg, bg=(215, 212, 210), seed=0, S=320, **kw):
     xs, ys, xe, ye = max(x0, 0), max(y0, 0), min(x0 + w, S), min(y0 + h, S)
     m = o.mask[ys - y0:ye - y0, xs - x0:xe - x0] > 0
     sc[ys:ye, xs:xe][m] = o.crop_bgr[ys - y0:ye - y0, xs - x0:xe - x0][m]
-    g = np.zeros((S, S), np.uint8); g[ys:ye, xs:xe][m] = 255
+    g = np.zeros((S, S), np.uint8)
+    g[ys:ye, xs:xe][m] = 255
     return sc, g
 
 
@@ -102,7 +102,7 @@ def run_mock():
         frame, gts = build_scene(bg, specs, seed=5)
         for method in ("bg_dist", "otsu_s", "kmeans"):
             cfg = dict(config.SEGMENT, method=method)
-            objs, mask = detect_fruits(frame, 0, seg_cfg=cfg)
+            objs, mask = detect_fruits(frame, seg_cfg=cfg)
             ious = match_iou(objs, gts, frame.shape)
             results[(bg_name, method)] = (len(objs), float(np.mean(ious)), frame, objs, mask)
             print(f"{bg_name:<10} {method:<8} so_qua={len(objs)}  IoU={np.mean(ious):.3f}  "
@@ -114,25 +114,11 @@ def run_mock():
         assert n == 3, f"[{bg_name}] phát hiện {n} quả, cần 3"
         assert iou > 0.95, f"[{bg_name}] IoU {iou:.3f} < 0.95"
 
-    # băng chuyền trống (chỉ nền + nhiễu + bóng) -> 0 quả
+    # nền trống (chỉ nền + nhiễu) -> 0 quả
     for bg in (BG_GRAY, BG_BLUE):
         empty, _ = build_scene(bg, [], noise=4.0, seed=9)
         objs, _ = detect_fruits(empty)
-        assert len(objs) == 0, "băng chuyền trống mà phát hiện quả (tăng min_dist/min_area)"
-
-    # quả bị cắt bởi mép khung
-    frame, _ = build_scene(BG_GRAY, [(dict(kind="apple_red", size=230, seed=1), 800, 100)])
-    objs, _ = detect_fruits(frame)
-    assert len(objs) == 1 and not is_fully_visible(objs[0], frame.shape), "quả cắt mép phải bị đánh dấu"
-
-    # tracking: 3 quả trượt 6 px/frame trong 12 frame -> ID ổn định
-    tr, ids_seen = CentroidTracker(), []
-    for t in range(12):
-        sp = [(kw, x + 6 * t, y) for kw, x, y in specs]
-        frame, _ = build_scene(BG_BLUE, sp, seed=t)
-        objs, _ = detect_fruits(frame, t)
-        ids_seen.append(tuple(o.track_id for o in tr.update(objs)))
-    assert len(set(ids_seen)) == 1 and ids_seen[0] == (0, 1, 2), f"ID không ổn định: {set(ids_seen)}"
+        assert len(objs) == 0, "nền trống mà phát hiện quả (tăng min_dist/min_area)"
 
     # nền vignette (tối dần ra góc) - tình huống của ảnh thật
     print("\n== Nền vignette ==")
@@ -140,7 +126,7 @@ def run_mock():
         frame, gts = build_scene(BG_GRAY, specs, seed=5, vignette=vg)
         for model in ("const", "surface"):
             cfg = dict(config.SEGMENT, bg_model=model)
-            objs, mask = detect_fruits(frame, 0, seg_cfg=cfg)
+            objs, mask = detect_fruits(frame, seg_cfg=cfg)
             ious = match_iou(objs, gts, frame.shape)
             print(f"vignette={vg:<5} bg_model={model:<8} so_vat={len(objs)} IoU={np.mean(ious):.3f}")
             if model == "surface":
@@ -156,7 +142,8 @@ def run_mock():
         for i, (k, sz, kw) in enumerate(cases):
             sc, g = build_still(sz, k, vg, seed=i, **kw)
             objs, _ = detect_fruits(sc)
-            nobj.append(len(objs)); ious.append(max(match_iou(objs, [g], sc.shape)) if objs else 0.0)
+            nobj.append(len(objs))
+            ious.append(max(match_iou(objs, [g], sc.shape)) if objs else 0.0)
         print(f"vignette={vg:<5} IoU_tb={np.mean(ious):.3f} (min={min(ious):.3f})  dung 1 vat: {sum(n == 1 for n in nobj)}/{len(nobj)}")
         assert min(ious) > 0.93 and all(n == 1 for n in nobj), f"ảnh tĩnh vignette {vg} tách sai"
 
@@ -172,7 +159,8 @@ def run_mock():
             vis[y:y + h, x:x + w][b > 0] = (0, 255, 0)
         rows.append(montage([frame, mask, vis], [bg_name + " goc", "mask", "bien (xanh)"], height=220))
     out = os.path.join(config.OUT_DIR, "figures", "m1_demo_mock.png")
-    imwrite(out, np.vstack(rows)); print("Đã lưu:", out)
+    imwrite(out, np.vstack(rows))
+    print("Đã lưu:", out)
 
 
 def run_folder(folder, n, method):
@@ -181,11 +169,12 @@ def run_folder(folder, n, method):
     tiles, warn = [], 0
     for f in files:
         img = imread(os.path.join(folder, f))
-        objs, mask = detect_fruits(img, 0, seg_cfg=cfg)
+        objs, mask = detect_fruits(img, seg_cfg=cfg)
         ratio = float((mask > 0).mean())
         flag = ""
         if len(objs) != 1 or not (0.08 < ratio < 0.90):
-            flag = "  <-- KIEM TRA"; warn += 1
+            flag = "  <-- KIEM TRA"
+            warn += 1
         print(f"{f:<36} so_vat={len(objs)}  dien_tich_mask={ratio:5.1%}{flag}")
         vis = img.copy()
         vis[extract_boundary(mask) > 0] = (0, 255, 0)
@@ -195,12 +184,14 @@ def run_folder(folder, n, method):
         tiles.append(np.zeros_like(tiles[0]))
     grid = np.vstack([np.hstack(tiles[i:i + cols]) for i in range(0, len(tiles), cols)])
     out = os.path.join(config.OUT_DIR, "figures", f"m1_{os.path.basename(folder.rstrip('/\\\\'))}_{method}.png")
-    imwrite(out, grid); print(f"\n{warn}/{len(files)} ảnh cần kiểm tra. Đã lưu: {out}")
+    imwrite(out, grid)
+    print(f"\n{warn}/{len(files)} ảnh cần kiểm tra. Đã lưu: {out}")
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--folder"); ap.add_argument("--n", type=int, default=12)
+    ap.add_argument("--folder")
+    ap.add_argument("--n", type=int, default=12)
     ap.add_argument("--method", default=config.SEGMENT["method"], choices=["bg_dist", "otsu_s", "kmeans"])
     a = ap.parse_args()
     run_folder(a.folder, a.n, a.method) if a.folder else run_mock()

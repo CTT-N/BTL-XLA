@@ -35,7 +35,7 @@ SEGMENT = dict(
     kmeans_k=3, kmeans_bg_dist=40,   # kmeans: cụm nào có tâm cách màu nền < kmeans_bg_dist là nền
     open_k=5, close_k=9,  # Morphology (Ch.5)
     fill_holes=True,
-    min_area=3000,        # bỏ vùng nhỏ hơn (pixel)
+    min_area=8100,        # bỏ vùng nhỏ hơn (pixel)
 )
 # ---------------------------------------------------------------- M2
 # Dải Hue "đạt" để tính ripe_ratio. Chỉnh bằng tập calibration.
