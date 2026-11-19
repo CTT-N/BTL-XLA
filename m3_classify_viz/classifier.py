@@ -7,7 +7,6 @@ Ngưỡng mặc định ở config.THRESHOLDS; nếu có outputs/thresholds_<fru
 """
 import json
 import os
-from collections import Counter
 
 import config
 from common.contracts import GRADE_1, GRADE_2, GRADE_3
@@ -51,11 +50,3 @@ def classify_rule_based(features, thresholds=None):
     if weak:
         return GRADE_2, "; ".join(weak)
     return GRADE_1, "dat chuan loai 1"
-
-
-def majority_grade(labels):
-    """Bỏ phiếu đa số; nếu hoà thì chọn hạng XẤU hơn (an toàn cho kiểm định chất lượng)."""
-    cnt = Counter(labels)
-    top = max(cnt.values())
-    order = [GRADE_3, GRADE_2, GRADE_1]
-    return next(g for g in order if cnt.get(g, 0) == top)

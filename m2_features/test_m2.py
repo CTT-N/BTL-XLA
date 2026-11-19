@@ -39,7 +39,7 @@ def _quick_mask_object(img):
     cnts, _ = cv2.findContours(m, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     c = max(cnts, key=cv2.contourArea)
     m = np.zeros_like(m); cv2.drawContours(m, [c], -1, 255, -1)
-    return FruitObject(0, 0, (0, 0, img.shape[1], img.shape[0]), (0, 0), img, m, c)
+    return FruitObject((0, 0, img.shape[1], img.shape[0]), img, m, c)
 
 
 def _print_row(name, f):

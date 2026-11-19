@@ -17,7 +17,7 @@ _BASE = {
 
 
 def make_mock_fruit(kind="apple_red", n_spots=0, spot_radius=22, rot_fraction=0.0,
-                    elongation=1.0, size=300, seed=0, track_id=0, frame_idx=0,
+                    elongation=1.0, size=300, seed=0,
                     bg_color=(70, 70, 70)):
     """
     Tạo 1 FruitObject giả.
@@ -63,11 +63,10 @@ def make_mock_fruit(kind="apple_red", n_spots=0, spot_radius=22, rot_fraction=0.
     alpha = (spot_mask.astype(np.float32) / 255.0)[..., None]
     img = (img * (1 - alpha) + brown * alpha).astype(np.uint8)
 
-    # nền quanh quả: xám băng chuyền
+    # nền xám quanh quả
     bg = np.full_like(img, bg_color)
     crop = np.where(mask[..., None] > 0, img, bg)
 
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     contour = max(contours, key=cv2.contourArea)
-    return FruitObject(track_id=track_id, frame_idx=frame_idx, bbox=(0, 0, w, h),
-                       centroid=(cx, cy), crop_bgr=crop, mask=mask, contour=contour)
+    return FruitObject(bbox=(0, 0, w, h), crop_bgr=crop, mask=mask, contour=contour)
