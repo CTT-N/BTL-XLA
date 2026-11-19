@@ -38,7 +38,7 @@ Dữ liệu đặt ở `data/raw/Apple/{Fresh,Rotten}` và `data/raw/Orange/{Fre
 
 ## Trang web minh hoạ pipeline
 ```bash
-python web/main.py
+python web/app.py
 ```
 Mở `http://127.0.0.1:5000`. Trang chủ có nút **Thử dataset** để chạy các ảnh trong `data/test`, chọn loại táo/cam, thanh 5 bước để chuyển M1 → M2 → M3 và ô tải ảnh riêng. Giao diện so sánh Before/After cho từng phép xử lý; `web/uploads/` là thư mục phiên làm việc cho ảnh tải lên.
 

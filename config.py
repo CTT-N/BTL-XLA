@@ -1,9 +1,9 @@
 """
 CẤU HÌNH TẬP TRUNG - mọi ngưỡng/tham số nằm ở đây.
 Mỗi module chỉ đọc section của mình:
-    M1 -> PREPROCESS, SEGMENT
+    M1 -> PREPROCESS, SEGMENT, TRACKER
     M2 -> FRUIT_CFG, DEFECT, SHAPE, COLOR
-    M3 -> THRESHOLDS
+    M3 -> VIDEO, THRESHOLDS, DISPLAY
 Hue theo thang OpenCV: 0..179 (1 đơn vị = 2 độ).
 """
 import os
@@ -28,7 +28,7 @@ SEGMENT = dict(
     bg_refit=True,        # surface: vòng 2 khớp lại nền bằng mọi pixel ngoài quả (tốt cho quả chiếm nhiều khung)
     bg_patch=12,          # const/kmeans: kích thước mảnh góc ảnh để ước lượng màu nền
     min_dist=30,          # bg_dist: ngưỡng = Otsu kẹp trong [min_dist, max_dist]
-    max_dist=60,          #   (min chống nhiễu nền; max chống Otsu cắt nhầm giữa 2 vùng quả)
+    max_dist=60,          #   (min chống phân đoạn nhiễu khi băng chuyền trống; max chống Otsu cắt nhầm giữa 2 vùng quả)
     s_min=50, s_max=100,  # otsu_s: Otsu kênh S kẹp trong [s_min, s_max]
     suppress_shadow=True, # loại bóng đổ: pixel cùng sắc nền nhưng tối hơn
     shadow_dS=25,
@@ -37,6 +37,8 @@ SEGMENT = dict(
     fill_holes=True,
     min_area=8100,        # bỏ vùng nhỏ hơn (pixel)
 )
+TRACKER = dict(max_dist=80, max_missing=5)
+
 # ---------------------------------------------------------------- M2
 # Dải Hue "đạt" để tính ripe_ratio. Chỉnh bằng tập calibration.
 FRUIT_CFG = {
@@ -70,6 +72,21 @@ DEFECT = dict(
 SHAPE = dict(hu_log_scale=True)
 
 # ---------------------------------------------------------------- M3
+VIDEO = dict(
+    fps=25, width=960, height=540,
+    belt_color=None,             # None = tự lấy trung vị màu nền các ảnh; hoặc (B,G,R) cố định
+    flatten_bg=True,             # bù vignette của ảnh gốc trước khi dán lên băng chuyền (giả định băng chuyền sáng đều)
+    fruit_size=320,              # cạnh ảnh quả (đã letterbox ở curate_dataset)
+    speed_px=10,                 # px/frame
+    gap_px=180,                  # khoảng hở giữa 2 quả
+    feather=28,                  # làm mờ mép ảnh khi dán lên băng chuyền (mép ảnh không lộ ra thành "khung")
+    y_jitter=15,                 # lệch dọc ngẫu nhiên +-
+)
+PIPELINE = dict(
+    zone=(0.35, 0.65),           # vùng quyết định theo chiều ngang (tỉ lệ chiều rộng khung)
+    vote_frames=3,               # số lần đo/quả để bỏ phiếu đa số
+    vote_step=2,                 # cách nhau 2 frame (giảm tải tính toán)
+)
 # Luật phân loại (Ch.0, 8). Giá trị khởi điểm theo giáo trình; calibrate.py sẽ tìm giá trị tốt hơn trên tập calib.
 #   LOAI 3 : defect > g2_max_defect  HOAC  circularity < g3_max_circ  HOAC  ripe < g3_max_ripe
 #   LOAI 1 : defect < g1_max_defect  VA    circularity >= g1_min_circ  VA    ripe >= g1_min_ripe
@@ -79,3 +96,4 @@ THRESHOLDS = dict(
     g2_max_defect=10.0,
     g3_max_circ=0.70, g3_max_ripe=0.30,
 )
+DISPLAY = dict(font_scale=0.6, thickness=2)

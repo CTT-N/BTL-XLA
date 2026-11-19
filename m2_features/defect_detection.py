@@ -124,7 +124,7 @@ def detect_defects(crop_bgr, mask, cfg=None, fruit_cfg=None):
         return empty
 
     # 1) làm mịn nhẹ
-    k = cfg["smooth_k"] | 1
+    k = int(cfg["smooth_k"]) | 1
     smooth = cv2.GaussianBlur(crop_bgr, (k, k), 0)
     smooth_f = smooth.astype(np.float32)
 
@@ -140,7 +140,7 @@ def detect_defects(crop_bgr, mask, cfg=None, fruit_cfg=None):
     ref, split, c_def = estimate_healthy_reference(smooth[inside], fruit_cfg, sep_min=cfg["kmeans_sep_min"])
     dist_g = np.sqrt(((smooth_f - ref[None, None, :]) ** 2).sum(axis=2))
     cluster_def = np.zeros(mask.shape, bool)
-    if split:                                   # gán mỗi pixel vào cụm gần hơn (K-means, Ch.6)
+    if split and c_def is not None and dist_g is not None:                                 # gán mỗi pixel vào cụm gần hơn (K-means, Ch.6)
         d_def = np.sqrt(((smooth_f - c_def[None, None, :]) ** 2).sum(axis=2))
         cluster_def = (d_def < dist_g) & inside
 
@@ -159,7 +159,8 @@ def detect_defects(crop_bgr, mask, cfg=None, fruit_cfg=None):
         otsu_t, _ = cv2.threshold(d8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         thr = max(thr, float(otsu_t))
     cand = (dist > thr) & inside
-    cand |= (dist_g > cfg["d_global_min"]) & inside          # lệch xa màu lành toàn quả
+    if dist_g is not None:
+        cand |= (dist_g > cfg["d_global_min"]) & inside          # lệch xa màu lành toàn quả
     cand |= cluster_def                                       # thuộc cụm "hỏng" (nếu đã tách cụm)
     hsv = cv2.cvtColor(smooth, cv2.COLOR_BGR2HSV)
     v = hsv[..., 2]

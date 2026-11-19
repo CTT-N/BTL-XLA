@@ -14,7 +14,10 @@ import numpy as np
 @dataclass
 class FruitObject:
     """Một quả đã được M1 tách khỏi nền trong 1 frame."""
+    track_id: int                 # ID theo dõi qua các frame (-1 nếu chưa gán)
+    frame_idx: int                # chỉ số frame chứa quả
     bbox: Tuple[int, int, int, int]       # (x, y, w, h) trên frame gốc
+    centroid: Tuple[float, float]         # (cx, cy) trên frame gốc
     crop_bgr: np.ndarray          # ảnh BGR (uint8) cắt theo bbox, shape (h, w, 3)
     mask: np.ndarray              # uint8 {0, 255}, shape (h, w), cùng kích thước crop_bgr
     contour: np.ndarray           # contour OpenCV của quả (toạ độ trong HỆ CROP)
