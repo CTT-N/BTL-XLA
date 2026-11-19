@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Fruit Vision Lab</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/assets/css/style.css">
+</head>
+<body>
+    <main class="page-shell">
+        <header class="topbar">
+            <a class="brand" href="/" aria-label="Trang chủ">
+                <span class="brand-mark">FV</span>
+                <span>
+                    <strong>Fruit Vision</strong>
+                    <small>CLASSIFICATION LAB</small>
+                </span>
+            </a>
+            <div class="top-actions">
+                <label class="fruit-select">
+                    <span>Loại trái</span>
+                    <select id="fruitSelect">
+                        <option value="apple">Táo</option>
+                        <option value="orange">Cam</option>
+                    </select>
+                </label>
+                <button class="dataset-button" id="datasetButton" type="button">
+                    <span class="button-icon">▦</span>
+                    Thử dataset
+                </button>
+            </div>
+        </header>
+
+        <section class="hero">
+            <div class="hero-copy">
+                <p class="eyebrow">KHÁM PHÁ PIPELINE</p>
+                <h1>Thấy rõ từng bước<br><em>xử lý trái cây.</em></h1>
+                <p class="intro">Nạp ảnh từ tập test có sẵn hoặc tải ảnh của bạn lên để quan sát toàn bộ luồng M1 → M2 → M3.</p>
+            </div>
+
+            <label class="upload-card" id="uploadCard">
+                <input type="file" id="imageUpload" accept=".jpg,.jpeg,.png,.bmp,.webp">
+                <span class="upload-icon">↥</span>
+                <span>
+                    <strong>Tải ảnh của bạn</strong>
+                    <small>Kéo thả hoặc nhấn để chọn JPG, PNG</small>
+                </span>
+            </label>
+        </section>
+
+        <section class="workbench" id="workbench" aria-live="polite">
+            <div class="empty-state" id="emptyState">
+                <span class="empty-orbit"></span>
+                <h2>Sẵn sàng phân tích</h2>
+                <p>Chọn ảnh từ dataset hoặc tải một ảnh lên để bắt đầu.</p>
+            </div>
+
+            <div class="analysis-view hidden" id="analysisView">
+                <div class="dataset-strip hidden" id="datasetStrip">
+                    <div class="strip-heading">
+                        <span>Ảnh trong dataset</span>
+                        <span id="datasetCount"></span>
+                    </div>
+                    <div class="thumbnail-row" id="thumbnailRow"></div>
+                </div>
+
+                <div class="image-stage">
+                    <button class="nav-arrow nav-prev" id="prevStep" type="button" aria-label="Bước trước">‹</button>
+                    <div class="stage-card">
+                        <div class="stage-header">
+                            <div>
+                                <span class="stage-kicker" id="stageKicker">Bước 01</span>
+                                <h2 id="stageTitle">Ảnh gốc</h2>
+                            </div>
+                            <span class="stage-module" id="stageModule">Đầu vào</span>
+                        </div>
+                        <div class="comparison" id="comparison">
+                            <div class="image-panel">
+                                <span>Before</span>
+                                <img id="beforeImage" alt="Ảnh trước xử lý">
+                            </div>
+                            <div class="image-divider"></div>
+                            <div class="image-panel">
+                                <span>After</span>
+                                <img id="afterImage" alt="Ảnh sau xử lý">
+                            </div>
+                        </div>
+                        <p class="step-description" id="stepDescription"></p>
+                    </div>
+                    <button class="nav-arrow nav-next" id="nextStep" type="button" aria-label="Bước tiếp">›</button>
+                </div>
+
+                <div class="metrics" id="metrics"></div>
+
+                <nav class="step-carousel" id="stepCarousel" aria-label="Các bước xử lý"></nav>
+            </div>
+        </section>
+
+        <div class="loading hidden" id="loading">
+            <span class="spinner"></span>
+            <p>Đang chạy pipeline...</p>
+        </div>
+    </main>
+    <script src="/assets/js/app.js"></script>
+</body>
+</html>
