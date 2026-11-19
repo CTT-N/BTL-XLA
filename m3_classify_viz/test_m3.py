@@ -10,11 +10,11 @@ import tempfile
 import cv2
 
 import config
-from common.contracts import GRADE_1, GRADE_2, GRADE_3
+from common.contracts import GRADE_1, GRADE_2, GRADE_3, GRADES
+from common.utils import imwrite
+from m1_segmentation.pipeline_m1 import detect_fruits
 from m1_segmentation.test_m1 import build_still
 from m2_features.extract_all import extract_all_features
-from .classifier import classify_rule_based
-from common.utils import imwrite
 from .classifier import classify_rule_based, majority_grade
 from .make_video import make_conveyor_video
 from .pipeline import run_pipeline
@@ -65,6 +65,7 @@ def test_static_image_pipeline():
         assert label in GRADES
         assert isinstance(reason, str) and reason
         print(f"[OK] {fruit} static image -> {label}")
+
 def test_end_to_end():
     with tempfile.TemporaryDirectory() as tmp:
         items = make_synthetic_items(tmp, n_each=5)
