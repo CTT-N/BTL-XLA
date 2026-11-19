@@ -36,9 +36,7 @@ app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 
 
 def _encode_image(image):
-    # OpenCV stores image arrays in BGR, while browsers and PNG data are RGB.
-    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    ok, buf = cv2.imencode(".png", rgb_image)
+    ok, buf = cv2.imencode(".png", image)
     if not ok:
         raise RuntimeError("Không thể mã hoá ảnh")
     return "data:image/png;base64," + __import__("base64").b64encode(buf.tobytes()).decode("ascii")
