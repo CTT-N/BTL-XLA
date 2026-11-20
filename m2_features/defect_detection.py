@@ -2,11 +2,11 @@
 PHÁT HIỆN KHUYẾT TẬT
 
 Các bước:
-1. Làm mịn Gaussian nhẹ
+  1. Làm mịn Gaussian nhẹ
   2. Co mặt nạ quả để bỏ viền (viền hay tối do bóng)
   3. Xác định MÀU LÀNH tham chiếu:
-       K-means K=2 trên màu pixel (Ch.6). Nếu 2 cụm tách xa nhau (có vùng hỏng rộng) -> chọn cụm
-       "lành" = cụm có nhiều pixel nằm trong dải màu đạt của loại quả (Color Slicing, Ch.3);
+       K-means K=2 trên màu pixel. Nếu 2 cụm tách xa nhau (có vùng hỏng rộng) -> chọn cụm
+       "lành" = cụm có nhiều pixel nằm trong dải màu đạt của loại quả (Color Slicing);
        nếu không thì dùng trung vị toàn quả.
   4. Màu lành CỤC BỘ tại từng pixel = trung bình Gaussian có trọng số (loại pixel nghi hỏng, lặp 3 vòng)
      => bóng đổ mượt (rìa tối hơn tâm) KHÔNG bị nhận nhầm là vết; vết thâm sắc nét thì nổi lên.
@@ -18,74 +18,20 @@ Các bước:
   7. Connected Component Labeling: đếm vết + diện tích từng vết
   8. P_loi = sum(A_benh) / A_qua * 100%
 """
+
 import cv2
 import numpy as np
 import config
-from .color_features import ripe_pixel_mask
+from common.utils import ellipse_kernel
 
 
-def _ellipse(k):
-    k = max(1, int(k)) | 1  # ép về số lẻ
-    return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
-
-
-def _ripe_fraction(pix_bgr, fruit_cfg):
-    """Tỉ lệ pixel (N,3 BGR uint8) nằm trong dải màu đạt."""
-    hsv = cv2.cvtColor(pix_bgr.reshape(-1, 1, 3).astype(np.uint8), cv2.COLOR_BGR2HSV).reshape(-1, 3)
-    return float(ripe_pixel_mask(hsv[:, 0], hsv[:, 1], hsv[:, 2], fruit_cfg).mean())
-
-
-def estimate_healthy_reference(pix_bgr, fruit_cfg, sep_min, max_samples=4000):
-    """
-    Ước lượng màu "lành" của cả quả bằng K-means + Color Slicing
-    Trả về (ref_healthy_bgr, split, defect_center_bgr | None)
-        split=True  : phát hiện quả có 2 vùng màu khác biệt (vd vỏ đỏ + vùng thối nâu)
-        split=False : chỉ 1 vùng màu (khác nhau chỉ do bóng đổ) -> ref = trung vị toàn quả
-    Quy tắc tách:
-        - cụm nhỏ nhất < 5% mẫu                      -> không tách
-        - cả 2 cụm đều >= 80% pixel màu đạt          -> không tách (vd táo 2 màu đỏ-xanh)
-        - chênh lệch tỉ lệ màu đạt giữa 2 cụm > 0.3  -> tách; cụm "lành" = cụm có nhiều màu đạt hơn
-        - ngược lại: tách nếu 2 tâm cụm cách nhau >= sep_min; cụm lành = cụm lớn hơn
-    """
-    pix = pix_bgr.astype(np.float32)
-    med = np.median(pix, axis=0)
-    if len(pix) < 200:
-        return med, False, None
-
-    rng = np.random.default_rng(0)
-    sub = pix[rng.choice(len(pix), min(max_samples, len(pix)), replace=False)]
-    cv2.setRNGSeed(0)
-    crit = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 1.0)
-    _, lab, cen = cv2.kmeans(sub, 2, None, crit, 3, cv2.KMEANS_PP_CENTERS)
-    lab = lab.ravel()
-    sizes = [int((lab == k).sum()) for k in (0, 1)]
-    if min(sizes) < 0.05 * len(sub):
-        return med, False, None
-
-    members = [sub[lab == k] for k in (0, 1)]
-    if fruit_cfg is not None:
-        rf = [_ripe_fraction(m, fruit_cfg) for m in members]
-        if min(rf) >= 0.8:
-            return med, False, None
-        if abs(rf[0] - rf[1]) > 0.3:
-            h = int(np.argmax(rf))
-        elif np.linalg.norm(cen[0] - cen[1]) >= sep_min:
-            h = int(np.argmax(sizes))
-        else:
-            return med, False, None
-    else:
-        if np.linalg.norm(cen[0] - cen[1]) < sep_min:
-            return med, False, None
-        h = int(np.argmax(sizes))
-    return np.median(members[h], axis=0), True, np.median(members[1 - h], axis=0)
-
-def _fit_radial_anomaly(hsv, mask, inside, fit_mask, cfg, fruit_cfg=None):
-    """
+"""
     Khớp quy luật hình cầu từ tâm (rho=0) ra viền (rho=1) dựa trên S và V:
     - Saturation tăng ra viền: S_exp = a_s + b_s * (rho^power)  (b_s >= 0)
     - Value giảm ra viền:      V_exp = a_v + b_v * (rho^power)  (b_v <= 0)
     Chỉ đẩy vào `cluster_def` khi thỏa mãn cả điều kiện suy giảm S/V VÀ nằm trong dải Hue nghi lỗi của loại quả đó.
-    """
+"""
+def _fit_radial_anomaly(hsv, mask, inside, fit_mask, cfg, fruit_cfg=None):
     f_cfg = fruit_cfg or {}
     power = cfg.get("radial_sat_power", 2.0)
     sat_thr = cfg.get("radial_sat_thr", 28.0)
@@ -133,11 +79,11 @@ def _fit_radial_anomaly(hsv, mask, inside, fit_mask, cfg, fruit_cfg=None):
 
     return (cond_sat_drop | cond_dark_dull) & cond_hue & inside
 
-def estimate_local_reference(img_f32, inside, sigma, init_w, d_thr, fallback, n_iter=3):
-    """
+"""
     Màu lành cục bộ (h,w,3) bằng normalized Gaussian convolution trong vùng quả.
     init_w: trọng số khởi tạo (loại sẵn vùng hỏng rộng). Mỗi vòng loại thêm pixel có D > d_thr.
-    """
+"""
+def estimate_local_reference(img_f32, inside, sigma, init_w, d_thr, fallback, n_iter=3):
     w = init_w.astype(np.float32)
     ref = np.tile(fallback.astype(np.float32), (*inside.shape, 1))
     for it in range(n_iter):
@@ -173,7 +119,7 @@ def detect_defects(crop_bgr, mask, cfg=None, fruit_cfg=None, debug=False):
     # 2) co mặt nạ, bỏ viền
     d_e = 2.0 * np.sqrt(fruit_area / np.pi)
     e = max(int(cfg["erode_px"]), int(round(cfg["erode_ratio"] * d_e)))
-    inner = cv2.erode(mask, _ellipse(2 * e + 1), borderType=cv2.BORDER_CONSTANT, borderValue=0) if e > 0 else mask.copy()
+    inner = cv2.erode(mask, ellipse_kernel(2 * e + 1), borderType=cv2.BORDER_CONSTANT, borderValue=0) if e > 0 else mask.copy()
     if cv2.countNonZero(inner) < 50:
         inner = mask.copy()
     inside = inner > 0
@@ -182,7 +128,7 @@ def detect_defects(crop_bgr, mask, cfg=None, fruit_cfg=None, debug=False):
     hsv = cv2.cvtColor(smooth, cv2.COLOR_BGR2HSV)
     v = hsv[..., 2]
     hl_raw = ((hsv[..., 1] < cfg["highlight_s_max"]) & (v > cfg["highlight_v_min"])).astype(np.uint8) * 255
-    highlight = cv2.dilate(hl_raw, _ellipse(5), borderType=cv2.BORDER_CONSTANT, borderValue=0) > 0
+    highlight = cv2.dilate(hl_raw, ellipse_kernel(5), borderType=cv2.BORDER_CONSTANT, borderValue=0) > 0
 
     fit_mask = inside & ~highlight
     if fit_mask.sum() < 50:
@@ -226,8 +172,8 @@ def detect_defects(crop_bgr, mask, cfg=None, fruit_cfg=None, debug=False):
     raw = cand.astype(np.uint8) * 255
 
     # 6) Morphology: Opening rồi Closing
-    raw = cv2.morphologyEx(raw, cv2.MORPH_OPEN, _ellipse(cfg["open_k"]), borderType=cv2.BORDER_CONSTANT, borderValue=0)
-    raw = cv2.morphologyEx(raw, cv2.MORPH_CLOSE, _ellipse(cfg["close_k"]), borderType=cv2.BORDER_CONSTANT, borderValue=0)
+    raw = cv2.morphologyEx(raw, cv2.MORPH_OPEN, ellipse_kernel(cfg["open_k"]), borderType=cv2.BORDER_CONSTANT, borderValue=0)
+    raw = cv2.morphologyEx(raw, cv2.MORPH_CLOSE, ellipse_kernel(cfg["close_k"]), borderType=cv2.BORDER_CONSTANT, borderValue=0)
     raw = cv2.bitwise_and(raw, mask)
 
     # 7) Connected Component Labeling

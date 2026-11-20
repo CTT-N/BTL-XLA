@@ -1,4 +1,5 @@
 import cv2
+import csv
 import numpy as np
 
 import config
@@ -74,6 +75,11 @@ def analyze_defect(obj, fruit, features, canvas_shape):
     if not dbg:
         return []
 
+    default_sat = config.DEFECT.get("cluster_sat_max", 175.0)
+    default_hue = config.DEFECT.get("cluster_hue_ranges", [(0, 14)])
+    sat_cap = fruit_cfg.get("cluster_sat_max", default_sat) if fruit_cfg else default_sat
+    hue_rng = fruit_cfg.get("cluster_hue_ranges", default_hue) if fruit_cfg else default_hue
+
     enc = lambda img: _encode_image(img, bbox=obj.bbox, canvas_shape=canvas_shape, mask=obj.mask)
 
     return [
@@ -86,12 +92,13 @@ def analyze_defect(obj, fruit, features, canvas_shape):
             ],
         },
         {
-            "title": "2.3.2 Phân cụm bất thường Saturation theo bán kính",
-            "description": "Khớp quy luật giảm độ bão hòa bậc 2 từ viền vào tâm khối cầu; vùng lệch chuẩn vượt ngưỡng được tách vào cụm nghi hỏng (đỏ).",
+            "title": "2.3.2 Phân cụm bất thường S/V theo bán kính & dải Hue lỗi",
+            "description": "Khớp đường cong S và V theo bán kính hình cầu từ tâm ra viền; vùng suy giảm S hoặc tối kèm xỉn màu (S < ngưỡng trần) và nằm trong dải Hue lỗi của quả được tách vào cụm nghi hỏng (đỏ).",
             "img": enc(dbg["3_kmeans_cluster_vis"]),
             "metrics": [
                 {"label": "Ref BGR", "value": f"({def_res['ref_bgr'][0]:.0f}, {def_res['ref_bgr'][1]:.0f}, {def_res['ref_bgr'][2]:.0f})"},
-                {"label": "Bậc / Ngưỡng S", "value": f"ρ^{config.DEFECT['radial_sat_power']} / {config.DEFECT['radial_sat_thr']}"},
+                {"label": "Ngưỡng S / Trần S", "value": f"ΔS>{config.DEFECT['radial_sat_thr']} / S<{sat_cap}"},
+                {"label": "Dải Hue lỗi", "value": f"{hue_rng}"},
             ],
         },
         {
@@ -287,4 +294,136 @@ def analyze_image(image_bgr, fruit):
             "area_px": int(features["area_px"]),
         },
         "steps": steps,
+    }
+
+def _load_manifest():
+    """Đọc data/manifest.csv trả về dict map từ path -> {fruit, label, split, original}."""
+    manifest_path = DATA_DIR / "manifest.csv"
+    mapping = {}
+    if not manifest_path.exists():
+        return mapping
+    with open(manifest_path, mode="r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            p = (row.get("path") or "").strip().replace("\\", "/")
+            if p:
+                mapping[p] = {
+                    "fruit": (row.get("fruit") or "").strip().lower(),
+                    "label": (row.get("label") or "").strip().lower(),
+                    "split": (row.get("split") or "").strip().lower(),
+                    "original": (row.get("original") or "").strip(),
+                }
+    return mapping
+
+
+def evaluate_dataset_splits(fruit, splits=("calib", "test")):
+    """
+    Chạy đánh giá dựa trên data/manifest.csv cho loại quả `fruit` và các tập `splits`.
+    Map trực tiếp ảnh đã chuẩn hóa với tên file gốc (`original`) và nhãn thực tế (`label`).
+    """
+    manifest = _load_manifest()
+    thresholds = load_thresholds(fruit)
+    pred_labels = ["LOAI 1", "LOAI 2", "LOAI 3"]
+    true_labels = ["healthy", "rotten"]
+    target_splits = {s.lower() for s in splits}
+
+    matrix_counts = {t: {p: 0 for p in pred_labels} for t in true_labels}
+    matrix_items = {t: {p: [] for p in pred_labels} for t in true_labels}
+    failed_items = []
+    total_processed = 0
+
+    for rel_in_data, meta in manifest.items():
+        if meta["fruit"] != fruit or meta["split"] not in target_splits:
+            continue
+        true_lbl = meta["label"]
+        if true_lbl not in true_labels:
+            continue
+
+        img_path = DATA_DIR / rel_in_data
+        if not img_path.exists():
+            continue
+
+        img = cv2.imread(str(img_path), cv2.IMREAD_COLOR)
+        if img is None:
+            continue
+
+        total_processed += 1
+        # Đường dẫn tương đối từ ROOT để tương thích với API /api/analyze-dataset
+        rel_from_root = str(img_path.relative_to(ROOT)).replace("\\", "/")
+        img_url = f"/dataset-file/{meta['split']}/{fruit}/{true_lbl}/{img_path.name}"
+
+        res_m1 = detect_fruits(img)
+        objs = res_m1[0] if isinstance(res_m1, tuple) else res_m1
+        if not objs:
+            failed_items.append({
+                "name": img_path.name,
+                "original": meta["original"],
+                "split": meta["split"],
+                "true_label": true_lbl,
+                "pred_label": "KHÔNG TÁCH ĐƯỢC",
+                "reason": "M1 không phát hiện được quả",
+                "path": rel_from_root,
+                "url": img_url,
+            })
+            continue
+
+        obj = max(objs, key=lambda o: cv2.countNonZero(o.mask))
+        features = extract_all_features(obj, fruit)
+        pred_lbl, reason = classify_rule_based(features, thresholds)
+
+        if pred_lbl not in pred_labels:
+            pred_lbl = "LOAI 3"
+
+        matrix_counts[true_lbl][pred_lbl] += 1
+        matrix_items[true_lbl][pred_lbl].append({
+            "name": img_path.name,
+            "original": meta["original"],
+            "split": meta["split"],
+            "true_label": true_lbl,
+            "pred_label": pred_lbl,
+            "reason": reason,
+            "defect_ratio": round(float(features["defect_ratio"]), 2),
+            "ripe_ratio": round(float(features["ripe_ratio"]) * 100, 1),
+            "circularity": round(float(features["circularity"]), 3),
+            "path": rel_from_root,
+            "url": img_url,
+        })
+
+    valid_total = total_processed - len(failed_items)
+
+
+    # Quy đổi sang 4 thành phần Confusion Matrix nhị phân (Positive = Rotten / LOAI 3)
+    tp = matrix_counts["rotten"]["LOAI 3"]
+    fn = matrix_counts["rotten"]["LOAI 1"] + matrix_counts["rotten"]["LOAI 2"]
+    tn = matrix_counts["healthy"]["LOAI 1"] + matrix_counts["healthy"]["LOAI 2"]
+    fp = matrix_counts["healthy"]["LOAI 3"]
+
+    valid_total = tp + fn + tn + fp
+    accuracy = round(100.0 * (tp + tn) / valid_total, 2) if valid_total > 0 else 0.0
+    precision = round(100.0 * tp / (tp + fp), 2) if (tp + fp) > 0 else 0.0
+    recall = round(100.0 * tp / (tp + fn), 2) if (tp + fn) > 0 else 0.0
+    f1_score = round(2.0 * precision * recall / (precision + recall), 2) if (precision + recall) > 0 else 0.0
+
+    return {
+        "ok": True,
+        "fruit": fruit,
+        "splits": list(splits),
+        "total": total_processed,
+        "valid_total": valid_total,
+        "metrics": {
+            "tp": tp,
+            "fn": fn,
+            "tn": tn,
+            "fp": fp,
+            "accuracy": accuracy,
+            "precision": precision,
+            "recall": recall,
+            "f1_score": f1_score,
+        },
+        "accuracy": accuracy,
+        "true_labels": true_labels,
+        "pred_labels": pred_labels,
+        "counts": matrix_counts,
+        "items": matrix_items,
+        "failed": failed_items,
     }

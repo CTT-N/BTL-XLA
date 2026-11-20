@@ -6,18 +6,15 @@ PHÂN TÍCH MÀU SẮC
 import cv2
 import numpy as np
 import config
+from common.utils import ellipse_kernel
 
-
-def _ellipse(k):
-    return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
-
-
-def compute_color_histogram(crop_bgr, mask, bins=32):
-    """
+"""
     Histogram kênh Hue (thang OpenCV 0..179) chỉ trên pixel thuộc quả, chuẩn hoá tổng = 1.
         p(h_k) = n_k / N   (Ch.2)
     Trả về: np.ndarray shape (bins,)
-    """
+"""
+def compute_color_histogram(crop_bgr, mask, bins=32):
+    
     hsv = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2HSV)
     hist = cv2.calcHist([hsv], [0], mask, [bins], [0, 180]).flatten()
     total = hist.sum()
@@ -44,13 +41,12 @@ def ripe_pixel_mask(h, s, v, fruit_cfg):
         )
     return in_range
 
-
-def extract_color_features(crop_bgr, mask, fruit="apple", fruit_cfg=None, bins=None, cfg=None):
-    """
+"""
     Input : crop_bgr (h,w,3) uint8, mask (h,w) uint8 {0,255}, fruit = 'apple' | 'orange'
     Output: dict {mean_h, mean_s, mean_v, hist_h, ripe_ratio}
         ripe_ratio = tỉ lệ pixel của quả đạt màu chín (dải viền ngoài cùng mặc định tính đạt).
-    """
+"""
+def extract_color_features(crop_bgr, mask, fruit="apple", fruit_cfg=None, bins=None, cfg=None):
     fruit_cfg = fruit_cfg or config.FRUIT_CFG[fruit]
     bins = bins or config.COLOR["hist_bins"]
     cfg = cfg or config.DEFECT
@@ -68,7 +64,7 @@ def extract_color_features(crop_bgr, mask, fruit="apple", fruit_cfg=None, bins=N
     # 2) Co mặt nạ tách phần ruột (inner) và dải viền (rim)
     d_e = 2.0 * np.sqrt(fruit_area / np.pi)
     e = max(int(cfg["erode_px"]), int(round(cfg["erode_ratio"] * d_e)))
-    inner = cv2.erode(mask, _ellipse(2 * e + 1), borderType=cv2.BORDER_CONSTANT, borderValue=0) if e > 0 else mask.copy()
+    inner = cv2.erode(mask, ellipse_kernel(2 * e + 1), borderType=cv2.BORDER_CONSTANT, borderValue=0) if e > 0 else mask.copy()
     if cv2.countNonZero(inner) < 50:
         inner = mask.copy()
 

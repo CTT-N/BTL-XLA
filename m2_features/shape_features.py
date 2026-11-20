@@ -10,18 +10,15 @@ import cv2
 import numpy as np
 import config
 
-
-def _largest_contour(mask):
-    cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-    return max(cnts, key=cv2.contourArea) if cnts else None
+from common.utils import _largest_contour
 
 
-def smooth_contour_perimeter(contour, window=9):
-    """
+"""
     Chu vi tính trên contour đã làm trơn (trung bình trượt vòng tròn).
     Lý do: đường biên bậc thang của pixel làm chu vi bị thổi phồng ~5% => Circularity của hình tròn
     hoàn hảo chỉ ~0.9. Làm trơn giúp Circularity ~1.0 như lý thuyết.
-    """
+"""
+def smooth_contour_perimeter(contour, window=9):
     pts = contour.reshape(-1, 2).astype(np.float64)
     n = len(pts)
     if n < window * 2:

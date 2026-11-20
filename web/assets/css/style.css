@@ -24,7 +24,7 @@ body {
     background:
         radial-gradient(circle at 82% 8%, rgba(81, 173, 137, .09), transparent 25rem),
         linear-gradient(135deg, #f9fbf8 0%, #f2f6f2 100%);
-    font-family: "DM Sans", sans-serif;
+    font-family: "Be Vietnam Pro", -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 button, select, input { font: inherit; }
@@ -149,6 +149,7 @@ button, select, input { font: inherit; }
     background: rgba(255, 255, 255, .86);
     box-shadow: 0 18px 60px rgba(42, 69, 54, .08);
     overflow: hidden;
+    padding: 20px;
 }
 
 .empty-state {

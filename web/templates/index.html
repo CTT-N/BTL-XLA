@@ -1,14 +1,16 @@
 <!doctype html>
 <html lang="vi">
+
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Fruit Vision Lab — Phân loại chất lượng trái cây</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/assets/css/style.css">
 </head>
+
 <body>
     <main class="page-shell">
         <header class="topbar">
@@ -35,14 +37,19 @@
                     <span class="button-icon">⚙</span>
                     Video Băng Chuyền
                 </button>
+                <button class="dataset-button" id="evalAllButton" type="button">
+                    <span class="button-icon">⊞</span>
+                    Confusion Matrix (Calib + Test)
+                </button>
             </div>
         </header>
 
         <section class="hero">
             <div class="hero-copy">
-                <p class="eyebrow">PIPELINE XỬ LÝ ẢNH SỐ</p>
-                <h1>Quan sát từng bước<br><em>phân loại trái cây.</em></h1>
-                <p class="intro">Chọn ảnh từ tập kiểm thử hoặc tải ảnh thực tế lên để theo dõi trực quan toàn bộ quy trình: Tiền xử lý &amp; Tách nền (M1) → Trích đặc trưng (M2) → Phân loại (M3).</p>
+
+                <h1>PIPELINE <br><em> phân loại trái cây.</em></h1>
+                <p class="intro">Chọn ảnh từ tập kiểm thử hoặc tải ảnh thực tế lên để theo dõi trực quan toàn bộ quy
+                    trình: Tiền xử lý &amp; Tách nền (M1) → Trích đặc trưng (M2) → Phân loại (M3).</p>
             </div>
 
             <label class="upload-card" id="uploadCard">
@@ -59,7 +66,8 @@
             <div class="empty-state" id="emptyState">
                 <span class="empty-orbit"></span>
                 <h2>Sẵn sàng phân tích</h2>
-                <p>Nhấn <strong>"Mẫu từ Dataset"</strong> hoặc tải ảnh lên ở góc trên bên phải để bắt đầu chạy pipeline.</p>
+                <p>Nhấn <strong>"Mẫu từ Dataset"</strong> hoặc tải ảnh lên ở góc trên bên phải để bắt đầu chạy pipeline.
+                </p>
             </div>
 
             <div class="analysis-view hidden" id="analysisView">
@@ -76,9 +84,11 @@
                             <span id="healthyPageInfo" style="font-size: 12px; opacity: 0.75;"></span>
                         </div>
                         <div style="display: flex; align-items: center; gap: 8px; justify-content: center;">
-                            <button type="button" class="nav-arrow" id="healthyPrev" aria-label="Trang trước" style="width: 34px; height: 34px; flex-shrink: 0;">«</button>
+                            <button type="button" class="nav-arrow" id="healthyPrev" aria-label="Trang trước"
+                                style="width: 34px; height: 34px; flex-shrink: 0;">«</button>
                             <div class="thumbnail-row" id="healthyRow" style="flex: 0.7;"></div>
-                            <button type="button" class="nav-arrow" id="healthyNext" aria-label="Trang sau" style="width: 34px; height: 34px; flex-shrink: 0;">»</button>
+                            <button type="button" class="nav-arrow" id="healthyNext" aria-label="Trang sau"
+                                style="width: 34px; height: 34px; flex-shrink: 0;">»</button>
                         </div>
                     </div>
 
@@ -89,15 +99,18 @@
                             <span id="rottenPageInfo" style="font-size: 12px; opacity: 0.75;"></span>
                         </div>
                         <div style="display: flex; align-items: center; gap: 8px; justify-content: center;">
-                            <button type="button" class="nav-arrow" id="rottenPrev" aria-label="Trang trước" style="width: 34px; height: 34px; flex-shrink: 0;">«</button>
+                            <button type="button" class="nav-arrow" id="rottenPrev" aria-label="Trang trước"
+                                style="width: 34px; height: 34px; flex-shrink: 0;">«</button>
                             <div class="thumbnail-row" id="rottenRow" style="flex: 0.7;"></div>
-                            <button type="button" class="nav-arrow" id="rottenNext" aria-label="Trang sau" style="width: 34px; height: 34px; flex-shrink: 0;">»</button>
+                            <button type="button" class="nav-arrow" id="rottenNext" aria-label="Trang sau"
+                                style="width: 34px; height: 34px; flex-shrink: 0;">»</button>
                         </div>
                     </div>
                 </div>
 
                 <div class="image-stage">
-                    <button class="nav-arrow nav-prev" id="prevStep" type="button" aria-label="Bước trước" title="Bước trước">‹</button>
+                    <button class="nav-arrow nav-prev" id="prevStep" type="button" aria-label="Bước trước"
+                        title="Bước trước">‹</button>
                     <div class="stage-card">
                         <div class="stage-header">
                             <div>
@@ -122,7 +135,8 @@
                         </div>
                         <p class="step-description" id="stepDescription"></p>
                     </div>
-                    <button class="nav-arrow nav-next" id="nextStep" type="button" aria-label="Bước tiếp" title="Bước tiếp theo">›</button>
+                    <button class="nav-arrow nav-next" id="nextStep" type="button" aria-label="Bước tiếp"
+                        title="Bước tiếp theo">›</button>
                 </div>
 
                 <div class="metrics" id="metrics"></div>
@@ -139,11 +153,56 @@
                         <span class="stage-module" id="videoStatsBadge"></span>
                     </div>
 
-                    <div style="display: flex; justify-content: center; background: #141720; border-radius: 12px; padding: 12px;">
-                        <video id="resultVideoPlayer" controls autoplay muted loop style="max-width: 100%; max-height: 460px; border-radius: 8px;"></video>
+                    <div
+                        style="display: flex; justify-content: center; background: #141720; border-radius: 12px; padding: 12px;">
+                        <video id="resultVideoPlayer" controls autoplay muted loop
+                            style="max-width: 100%; max-height: 460px; border-radius: 8px;"></video>
                     </div>
 
                     <div id="videoResultsSummary" style="margin-top: 16px; overflow-x: auto;"></div>
+                </div>
+            </div>
+            <div class="eval-view hidden" id="evalView" style="margin-top: 20px;">
+                <div class="stage-card">
+                    <div class="stage-header">
+                        <div>
+                            <span class="stage-kicker">ĐÁNH GIÁ TOÀN TẬP DỮ LIỆU (CALIB + TEST)</span>
+                            <h2 id="evalTitle">Confusion Matrix</h2>
+                        </div>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <label
+                                style="font-size: 13px; display: flex; gap: 6px; align-items: center; cursor: pointer;">
+                                <input type="checkbox" id="chkCalib" checked> Calib
+                            </label>
+                            <label
+                                style="font-size: 13px; display: flex; gap: 6px; align-items: center; cursor: pointer;">
+                                <input type="checkbox" id="chkTest" checked> Test
+                            </label>
+                            <button type="button" class="dataset-button" id="runEvalBtn" style="padding: 6px 12px;">Chạy
+                                lại</button>
+                            <span class="stage-module" id="evalAccuracyBadge">Accuracy: --%</span>
+                        </div>
+                    </div>
+
+                    <p style="font-size: 13px; opacity: 0.8; margin-bottom: 14px;">
+                        Nhấn vào từng ô số lượng trong ma trận để xem danh sách ảnh thực tế tương ứng và kiểm tra chi
+                        tiết từng ảnh.
+                    </p>
+
+                    <!-- Bảng Confusion Matrix -->
+                    <div id="confusionMatrixContainer" style="overflow-x: auto;"></div>
+
+                    <!-- Danh sách ảnh chi tiết của ô đang chọn -->
+                    <div id="matrixCellDetail" class="hidden"
+                        style="margin-top: 20px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 16px;">
+                        <div class="strip-heading" style="margin-bottom: 12px;">
+                            <strong id="cellDetailTitle" style="font-size: 15px;">Danh sách ảnh</strong>
+                            <span id="cellDetailCount" style="font-size: 13px; opacity: 0.75;"></span>
+                        </div>
+                        <div id="cellImageGrid"
+                            style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px;">
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>
@@ -155,4 +214,5 @@
     </main>
     <script src="/assets/js/app.js"></script>
 </body>
+
 </html>

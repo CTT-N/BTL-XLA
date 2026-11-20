@@ -40,3 +40,12 @@ def montage(images, titles=None, height=300):
                         0.6, (0, 255, 255), 2, cv2.LINE_AA)
         tiles.append(im)
     return np.hstack(tiles)
+
+def ellipse_kernel(k: int) -> np.ndarray:
+    """Tạo phần tử cấu trúc hình elip kích thước lẻ k x k cho các phép toán hình thái học."""
+    k = max(1, int(k)) | 1
+    return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
+
+def _largest_contour(mask):
+    cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    return max(cnts, key=cv2.contourArea) if cnts else None
