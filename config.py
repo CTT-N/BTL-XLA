@@ -43,33 +43,39 @@ TRACKER = dict(max_dist=80, max_missing=5)
 # Dải Hue "đạt" để tính ripe_ratio. Chỉnh bằng tập calibration.
 FRUIT_CFG = {
     "apple": dict(
-        ripe_hue_ranges=[(0, 11), (14, 18), (18, 52), (165, 179)],  # đỏ + vàng-xanh + đỏ thẫm
-        ripe_s=[(60, 240), (220, 223), (70, 230), (60, 240)], 
-        ripe_v=[(85, 255), (220, 223), (90, 255), (85, 255)],
+        ripe_hue_ranges=[(0, 11), (13, 18), (165, 179)],  # đỏ + vàng-xanh + đỏ thẫm
+        ripe_s=[(70, 193), (70, 230), (70, 193)], 
+        ripe_v=[(90, 255), (90, 255), (90, 255)],
+        # Tham số tách cụm thối riêng cho Táo
+        cluster_sat_max=40.0,
+        cluster_hue_ranges=[(0, 14), (14, 18)],
     ),
     "orange": dict(
-        ripe_hue_ranges=[(8, 24)],
-        ripe_s=[(80, 255)],
-        ripe_v=[(80, 255)]
+        ripe_hue_ranges=[(12, 24)],
+        ripe_s=[(180, 255)],
+        ripe_v=[(115, 255)],
+        # Tham số tách cụm thối riêng cho Cam (vỏ cam H từ 12..24 nên vết thối nâu lệch về 0..11 hoặc >25)
+        cluster_sat_max=170.0,
+        cluster_hue_ranges=[(0, 11), (25, 45)],
     ),
 }
 COLOR = dict(hist_bins=32)
 
 DEFECT = dict(
-    smooth_k=5,             # Gaussian trước khi đo khoảng cách màu (Ch.2)
+    smooth_k=5,             # Gaussian trước khi đo khoảng cách màu
     erode_px=8,             # co mặt nạ tối thiểu (pixel) để bỏ viền quả (viền hay tối do bóng)
     erode_ratio=0.06,       # ... hoặc theo tỉ lệ với d_e (lấy giá trị lớn hơn)
     ref_sigma_ratio=0.12,   # sigma Gaussian ước lượng màu lành cục bộ = ratio * d_e
-    d0_min=45.0,            # D0 (Ch.3): khoảng cách RGB tới màu lành CỤC BỘ để coi là bất thường
-    use_otsu=True,          # ngưỡng = max(Otsu(D), d0_min)  (Ch.6)
-    d_global_min=85.0,      # khoảng cách RGB tới màu lành TOÀN QUẢ; bắt vùng thối rộng
+    d0_min=32.0,            # D0 khoảng cách RGB tới màu lành CỤC BỘ để coi là bất thường
+    use_otsu=True,          # ngưỡng = max(Otsu(D), d0_min)
+    d_global_min=70.0,      # khoảng cách RGB tới màu lành TOÀN QUẢ; bắt vùng thối rộng
     radial_sat_power=2.0,
     radial_sat_thr=28.0,
     radial_val_thr=20.0,
     dark_v=45,              # pixel quá tối (V < dark_v) coi là hỏng/thối đen
-    highlight_s_max=255,     # điểm chói phản quang (S thấp & V cao) KHÔNG tính là vết hỏng
-    highlight_v_min=175,
-    open_k=3, close_k=5,    # Morphology (Ch.5)
+    highlight_s_max=210,     # điểm chói phản quang (S thấp & V cao) KHÔNG tính là vết hỏng
+    highlight_v_min=195,
+    open_k=5, close_k=5,    # Morphology
     min_spot_area_ratio=0.002,   # vết nhỏ hơn 0.2% diện tích quả bị bỏ
     min_spot_area_px=15,
 )
@@ -96,7 +102,7 @@ PIPELINE = dict(
 #   LOAI 1 : defect < g1_max_defect  VA    circularity >= g1_min_circ  VA    ripe >= g1_min_ripe
 #   LOAI 2 : con lai
 THRESHOLDS = dict(
-    g1_max_defect=1.0, g1_min_circ=0.85, g1_min_ripe=0.80,
+    g1_max_defect=5.0, g1_min_circ=0.85, g1_min_ripe=0.80,
     g2_max_defect=10.0,
     g3_max_circ=0.70, g3_max_ripe=0.30,
 )

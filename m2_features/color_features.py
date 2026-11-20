@@ -1,32 +1,15 @@
 """
 PHÂN TÍCH MÀU SẮC
-    - rgb_to_hsi(): công thức RGB->HSI tự cài bằng NumPy
-    - compute_color_histogram(): histogram Hue chuẩn hoá
-    - extract_color_features(): mean H/S/V + tỉ lệ màu đạt
+- compute_color_histogram(): histogram Hue chuẩn hoá
+- extract_color_features(): mean H/S/V + tỉ lệ màu đạt (bỏ qua vùng viền tối)
 """
 import cv2
 import numpy as np
 import config
 
 
-# def rgb_to_hsi(bgr):
-#     """
-#     Chuyển ảnh BGR (uint8) sang HSI theo công thức.
-#     Trả về: H (độ, 0..360), S (0..1), I (0..1) - mỗi cái là ma trận (h, w).
-#         I = (R+G+B)/3
-#         S = 1 - 3*min(R,G,B)/(R+G+B)
-#         theta = arccos( 0.5*((R-G)+(R-B)) / sqrt((R-G)^2 + (R-B)(G-B)) )
-#         H = theta nếu B <= G, ngược lại 360 - theta
-#     """
-#     b, g, r = [bgr[..., i].astype(np.float64) / 255.0 for i in range(3)]
-#     eps = 1e-8
-#     i = (r + g + b) / 3.0
-#     s = 1.0 - 3.0 * np.minimum(np.minimum(r, g), b) / (r + g + b + eps)
-#     num = 0.5 * ((r - g) + (r - b))
-#     den = np.sqrt((r - g) ** 2 + (r - b) * (g - b)) + eps
-#     theta = np.degrees(np.arccos(np.clip(num / den, -1.0, 1.0)))
-#     h = np.where(b <= g, theta, 360.0 - theta)
-#     return h, s, i
+def _ellipse(k):
+    return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
 
 
 def compute_color_histogram(crop_bgr, mask, bins=32):
@@ -48,7 +31,6 @@ def _circular_mean_hue(h_vals):
     return float((m * 180.0 / (2.0 * np.pi)) % 180.0)
 
 
-
 # Color Slicing
 def ripe_pixel_mask(h, s, v, fruit_cfg):
     in_range = np.zeros(h.shape, bool)
@@ -63,31 +45,50 @@ def ripe_pixel_mask(h, s, v, fruit_cfg):
     return in_range
 
 
-def extract_color_features(crop_bgr, mask, fruit="apple", fruit_cfg=None, bins=None):
+def extract_color_features(crop_bgr, mask, fruit="apple", fruit_cfg=None, bins=None, cfg=None):
     """
     Input : crop_bgr (h,w,3) uint8, mask (h,w) uint8 {0,255}, fruit = 'apple' | 'orange'
     Output: dict {mean_h, mean_s, mean_v, hist_h, ripe_ratio}
-        ripe_ratio = tỉ lệ pixel của quả có Hue nằm trong dải "đạt" của loại quả đó,
-                     đủ bão hoà (S) và đủ sáng (V). Dải được chỉnh trong config.FRUIT_CFG.
+        ripe_ratio = tỉ lệ pixel của quả đạt màu chín (dải viền ngoài cùng mặc định tính đạt).
     """
     fruit_cfg = fruit_cfg or config.FRUIT_CFG[fruit]
     bins = bins or config.COLOR["hist_bins"]
+    cfg = cfg or config.DEFECT
 
-    hsv = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2HSV)
-    inside = mask > 0
-    n = int(inside.sum())
-    if n == 0:
+    fruit_area = int(cv2.countNonZero(mask))
+    if fruit_area == 0:
         return dict(mean_h=0.0, mean_s=0.0, mean_v=0.0,
                     hist_h=np.zeros(bins), ripe_ratio=0.0)
 
-    h, s, v = hsv[..., 0][inside], hsv[..., 1][inside], hsv[..., 2][inside]
+    # 1) Làm mịn nhẹ trước khi chuyển HSV
+    k = int(cfg["smooth_k"]) | 1
+    smooth = cv2.GaussianBlur(crop_bgr, (k, k), 0)
+    hsv = cv2.cvtColor(smooth, cv2.COLOR_BGR2HSV)
 
-    ripe = ripe_pixel_mask(h, s, v, fruit_cfg)
+    # 2) Co mặt nạ tách phần ruột (inner) và dải viền (rim)
+    d_e = 2.0 * np.sqrt(fruit_area / np.pi)
+    e = max(int(cfg["erode_px"]), int(round(cfg["erode_ratio"] * d_e)))
+    inner = cv2.erode(mask, _ellipse(2 * e + 1), borderType=cv2.BORDER_CONSTANT, borderValue=0) if e > 0 else mask.copy()
+    if cv2.countNonZero(inner) < 50:
+        inner = mask.copy()
+
+    full_inside = mask > 0
+    core_inside = inner > 0
+    rim_mask = full_inside & ~core_inside  # Dải viền ngoài cùng
+
+    # 3) Phần ruột kiểm tra theo ngưỡng màu; dải viền mặc định đạt (True)
+    h_core = hsv[..., 0][core_inside]
+    s_core = hsv[..., 1][core_inside]
+    v_core = hsv[..., 2][core_inside]
+
+    ripe_core_count = int(ripe_pixel_mask(h_core, s_core, v_core, fruit_cfg).sum())
+    rim_count = int(rim_mask.sum())
+    total_count = int(full_inside.sum())
 
     return dict(
-        mean_h=_circular_mean_hue(h),
-        mean_s=float(s.mean()),
-        mean_v=float(v.mean()),
-        hist_h=compute_color_histogram(crop_bgr, mask, bins),
-        ripe_ratio=float(ripe.sum() / n),
+        mean_h=_circular_mean_hue(h_core),
+        mean_s=float(s_core.mean()),
+        mean_v=float(v_core.mean()),
+        hist_h=compute_color_histogram(smooth, inner, bins),
+        ripe_ratio=float((ripe_core_count + rim_count) / total_count),
     )

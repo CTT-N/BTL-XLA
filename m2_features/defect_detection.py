@@ -79,18 +79,19 @@ def estimate_healthy_reference(pix_bgr, fruit_cfg, sep_min, max_samples=4000):
         h = int(np.argmax(sizes))
     return np.median(members[h], axis=0), True, np.median(members[1 - h], axis=0)
 
-def _fit_radial_anomaly(hsv, mask, inside, fit_mask, cfg):
+def _fit_radial_anomaly(hsv, mask, inside, fit_mask, cfg, fruit_cfg=None):
     """
     Khớp quy luật hình cầu từ tâm (rho=0) ra viền (rho=1) dựa trên S và V:
-      - Saturation tăng ra viền: S_exp = a_s + b_s * (rho^power)  (b_s >= 0)
-      - Value giảm ra viền:      V_exp = a_v + b_v * (rho^power)  (b_v <= 0)
-    Đẩy vào `cluster_def` nếu:
-      1) Độ bão hòa lệch khỏi đường cong hình cầu: |S - S_exp| > radial_sat_thr
-      2) HOẶC tối hơn đường cong sáng kỳ vọng của hình cầu: V < V_exp - radial_val_thr
+    - Saturation tăng ra viền: S_exp = a_s + b_s * (rho^power)  (b_s >= 0)
+    - Value giảm ra viền:      V_exp = a_v + b_v * (rho^power)  (b_v <= 0)
+    Chỉ đẩy vào `cluster_def` khi thỏa mãn cả điều kiện suy giảm S/V VÀ nằm trong dải Hue nghi lỗi của loại quả đó.
     """
+    f_cfg = fruit_cfg or {}
     power = cfg.get("radial_sat_power", 2.0)
     sat_thr = cfg.get("radial_sat_thr", 28.0)
     val_thr = cfg.get("radial_val_thr", 20.0)
+    sat_max_cap = f_cfg.get("cluster_sat_max", cfg.get("cluster_sat_max", 175.0))
+    hue_ranges = f_cfg.get("cluster_hue_ranges", cfg.get("cluster_hue_ranges", [(0, 14)]))
 
     dist_to_edge = cv2.distanceTransform(mask, cv2.DIST_L2, 5)
     max_d = float(dist_to_edge.max())
@@ -100,6 +101,7 @@ def _fit_radial_anomaly(hsv, mask, inside, fit_mask, cfg):
     rho = np.clip(1.0 - (dist_to_edge / max_d), 0.0, 1.0)
     x_feat = rho ** power
 
+    h_u8 = hsv[..., 0]
     s_f = hsv[..., 1].astype(np.float32)
     v_f = hsv[..., 2].astype(np.float32)
 
@@ -107,9 +109,9 @@ def _fit_radial_anomaly(hsv, mask, inside, fit_mask, cfg):
     b_s, a_s = np.polyfit(x_feat[fit_mask], s_f[fit_mask], 1)
     if b_s < 0:
         a_s, b_s = float(np.median(s_f[fit_mask])), 0.0
-    s_exp = a_s + b_s * x_feat #độ bão hòa kì vọng
+    s_exp = a_s + b_s * x_feat
 
-    # 2. Fit Value bền vững: loại 25% pixel tối nhất để mảng thối không kéo tụt đường chuẩn V_exp
+    # 2. Fit Value bền vững
     v_vals = v_f[fit_mask]
     bright_enough = fit_mask & (v_f >= np.percentile(v_vals, 25))
     v_fit_mask = bright_enough if bright_enough.sum() >= 50 else fit_mask
@@ -119,10 +121,17 @@ def _fit_radial_anomaly(hsv, mask, inside, fit_mask, cfg):
         a_v, b_v = float(np.median(v_f[v_fit_mask])), 0.0
     v_exp = a_v + b_v * x_feat
 
-    cond_sat = np.abs(s_f - s_exp) > sat_thr
-    cond_dark = v_f < (v_exp - val_thr)
+    # Điều kiện 1: Saturation tụt thấp hơn đường cong kỳ vọng
+    cond_sat_drop = (s_exp - s_f) > sat_thr
+    # Điều kiện 2: Vùng tối hơn kỳ vọng NHƯNG Saturation phải thấp hơn ngưỡng trần
+    cond_dark_dull = (v_f < (v_exp - val_thr)) & (s_f < sat_max_cap)
 
-    return (cond_sat | cond_dark) & inside
+    # Điều kiện 3: Hue nằm trong dải màu vết hỏng của loại quả tương ứng
+    cond_hue = np.zeros(h_u8.shape, dtype=bool)
+    for lo, hi in hue_ranges:
+        cond_hue |= (h_u8 >= lo) & (h_u8 <= hi)
+
+    return (cond_sat_drop | cond_dark_dull) & cond_hue & inside
 
 def estimate_local_reference(img_f32, inside, sigma, init_w, d_thr, fallback, n_iter=3):
     """
@@ -180,12 +189,12 @@ def detect_defects(crop_bgr, mask, cfg=None, fruit_cfg=None, debug=False):
         fit_mask = inside
 
     # Vòng 1: Fit sơ bộ trên toàn bộ vùng không chói
-    cluster_def = _fit_radial_anomaly(hsv, mask, inside, fit_mask, cfg) & ~highlight
+    cluster_def = _fit_radial_anomaly(hsv, mask, inside, fit_mask, cfg, fruit_cfg) & ~highlight
 
     # Vòng 2 (Refit): Fit lại đường cong hình cầu trên vùng SẠCH (đã bỏ cluster_def)
     clean_fit = fit_mask & ~cluster_def
     if clean_fit.sum() >= 50:
-        cluster_def = _fit_radial_anomaly(hsv, mask, inside, clean_fit, cfg) & ~highlight
+        cluster_def = _fit_radial_anomaly(hsv, mask, inside, clean_fit, cfg, fruit_cfg) & ~highlight
 
     # Suy ra màu lành đại diện `ref` và khoảng cách toàn cục `dist_g` từ cụm lành còn lại
     healthy_pixels = smooth_f[clean_fit if clean_fit.sum() >= 50 else fit_mask]
