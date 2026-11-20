@@ -28,10 +28,10 @@ def extract_all_features(obj: FruitObject, fruit: str = "apple", cfg=None, retur
     Output: feature dict (hoặc (feat, debug_masks) nếu return_debug=True)
     """
     fruit_cfg = config.FRUIT_CFG[fruit]
+    shape = extract_shape_features(obj.mask)
     color = extract_color_features(obj.crop_bgr, obj.mask, fruit, fruit_cfg)
     defect = detect_defects(obj.crop_bgr, obj.mask, cfg or config.DEFECT, fruit_cfg)
-    shape = extract_shape_features(obj.mask)
-
+    
     raw = {**color, **defect, **shape}
     feat = {k: raw[k] for k in FEATURE_KEYS}
     validate_features(feat)

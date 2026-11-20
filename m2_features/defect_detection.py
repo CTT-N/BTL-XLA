@@ -37,7 +37,7 @@ def _ripe_fraction(pix_bgr, fruit_cfg):
 
 def estimate_healthy_reference(pix_bgr, fruit_cfg, sep_min, max_samples=4000):
     """
-    Ước lượng màu "lành" của cả quả bằng K-means K=2 (Ch.6) + Color Slicing theo loại quả (Ch.3).
+    Ước lượng màu "lành" của cả quả bằng K-means + Color Slicing
     Trả về (ref_healthy_bgr, split, defect_center_bgr | None)
         split=True  : phát hiện quả có 2 vùng màu khác biệt (vd vỏ đỏ + vùng thối nâu)
         split=False : chỉ 1 vùng màu (khác nhau chỉ do bóng đổ) -> ref = trung vị toàn quả
@@ -101,25 +101,14 @@ def estimate_local_reference(img_f32, inside, sigma, init_w, d_thr, fallback, n_
     return ref.astype(np.float32)
 
 
-def detect_defects(crop_bgr, mask, cfg=None, fruit_cfg=None):
-    """
-    Input : crop_bgr (h,w,3) uint8; mask (h,w) uint8 {0,255}
-            fruit_cfg: config.FRUIT_CFG['apple'] (tuỳ chọn; giúp chọn đúng màu lành khi có vùng thối rộng)
-    Output: dict
-        defect_mask    uint8 {0,255} (h,w)
-        defect_ratio   float, % diện tích quả bị lỗi (0..100)
-        n_spots        int, số vết
-        defect_area_px int, tổng diện tích vết (pixel)
-        spots          list[dict(area, centroid, bbox)]
-        ref_bgr        màu lành tham chiếu (để vẽ minh hoạ báo cáo)
-        threshold      ngưỡng khoảng cách cục bộ đã dùng
-        dist_map       bản đồ khoảng cách (để vẽ minh hoạ)
-    """
+def detect_defects(crop_bgr, mask, cfg=None, fruit_cfg=None, debug=False):
     cfg = cfg or config.DEFECT
     fruit_area = int(cv2.countNonZero(mask))
     empty = dict(defect_mask=np.zeros_like(mask), defect_ratio=0.0, n_spots=0,
                  defect_area_px=0, spots=[], ref_bgr=(0, 0, 0), threshold=0.0,
                  dist_map=np.zeros(mask.shape, np.float32))
+    if debug:
+        empty["debug_steps"] = {}
     if fruit_area == 0:
         return empty
 
@@ -131,22 +120,30 @@ def detect_defects(crop_bgr, mask, cfg=None, fruit_cfg=None):
     # 2) co mặt nạ, bỏ viền
     d_e = 2.0 * np.sqrt(fruit_area / np.pi)
     e = max(int(cfg["erode_px"]), int(round(cfg["erode_ratio"] * d_e)))
-    inner = cv2.erode(mask, _ellipse(2 * e + 1)) if e > 0 else mask.copy()
+    inner = cv2.erode(mask, _ellipse(2 * e + 1), borderType=cv2.BORDER_CONSTANT, borderValue=0) if e > 0 else mask.copy()
     if cv2.countNonZero(inner) < 50:
         inner = mask.copy()
     inside = inner > 0
 
-    # 3) màu lành toàn quả
-    ref, split, c_def = estimate_healthy_reference(smooth[inside], fruit_cfg, sep_min=cfg["kmeans_sep_min"])
+    # Tính trước HSV & mặt nạ điểm chói (glare) để loại khỏi K-means và nội suy màu lành
+    hsv = cv2.cvtColor(smooth, cv2.COLOR_BGR2HSV)
+    v = hsv[..., 2]
+    highlight = (hsv[..., 1] < cfg["highlight_s_max"]) & (v > cfg["highlight_v_min"])
+    valid_inside = inside & ~highlight
+    if valid_inside.sum() < 50:
+        valid_inside = inside
+
+    # 3) màu lành toàn quả (chỉ học trên pixel không bị lóa sáng)
+    ref, split, c_def = estimate_healthy_reference(smooth[valid_inside], fruit_cfg, sep_min=cfg["kmeans_sep_min"])
     dist_g = np.sqrt(((smooth_f - ref[None, None, :]) ** 2).sum(axis=2))
     cluster_def = np.zeros(mask.shape, bool)
-    if split and c_def is not None and dist_g is not None:                                 # gán mỗi pixel vào cụm gần hơn (K-means, Ch.6)
-        d_def = np.sqrt(((smooth_f - c_def[None, None, :]) ** 2).sum(axis=2))
-        cluster_def = (d_def < dist_g) & inside
+    if split and c_def is not None and dist_g is not None:
+        dist_def = np.sqrt(((smooth_f - c_def[None, None, :]) ** 2).sum(axis=2))
+        cluster_def = (dist_def < dist_g) & valid_inside
 
-    # 4) màu lành cục bộ (bù bóng đổ). Nếu đã tách cụm: khởi tạo chỉ bằng pixel gần màu lành.
+    # 4) màu lành cục bộ (bù bóng đổ - loại bỏ cả cụm hỏng lẫn điểm chói khi nội suy)
     sigma = max(5.0, cfg["ref_sigma_ratio"] * d_e)
-    init_w = (inside & ~cluster_def) if split else inside
+    init_w = (valid_inside & ~cluster_def) if split else valid_inside
     if init_w.sum() < 50:
         init_w = inside
     ref_map = estimate_local_reference(smooth_f, inside, sigma, init_w, cfg["d0_min"], ref)
@@ -155,23 +152,21 @@ def detect_defects(crop_bgr, mask, cfg=None, fruit_cfg=None):
     dist = np.sqrt(((smooth_f - ref_map) ** 2).sum(axis=2))
     thr = float(cfg["d0_min"])
     if cfg["use_otsu"]:
-        d8 = np.clip(dist[inside], 0, 255).astype(np.uint8).reshape(-1, 1)
+        d8 = np.clip(dist[valid_inside], 0, 255).astype(np.uint8).reshape(-1, 1)
         otsu_t, _ = cv2.threshold(d8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         thr = max(thr, float(otsu_t))
+
     cand = (dist > thr) & inside
     if dist_g is not None:
-        cand |= (dist_g > cfg["d_global_min"]) & inside          # lệch xa màu lành toàn quả
-    cand |= cluster_def                                       # thuộc cụm "hỏng" (nếu đã tách cụm)
-    hsv = cv2.cvtColor(smooth, cv2.COLOR_BGR2HSV)
-    v = hsv[..., 2]
-    cand |= (v < cfg["dark_v"]) & inside                      # quá tối
-    highlight = (hsv[..., 1] < cfg["highlight_s_max"]) & (v > cfg["highlight_v_min"])
-    cand &= ~highlight                                        # bỏ điểm chói
+        cand |= (dist_g > cfg["d_global_min"]) & inside
+    cand |= cluster_def
+    cand |= (v < cfg["dark_v"]) & inside
+    cand &= ~highlight
     raw = cand.astype(np.uint8) * 255
 
-    # 6) Morphology: Opening (bỏ đốm nhiễu) rồi Closing (lấp lỗ)
-    raw = cv2.morphologyEx(raw, cv2.MORPH_OPEN, _ellipse(cfg["open_k"]))
-    raw = cv2.morphologyEx(raw, cv2.MORPH_CLOSE, _ellipse(cfg["close_k"]))
+    # 6) Morphology: Opening rồi Closing
+    raw = cv2.morphologyEx(raw, cv2.MORPH_OPEN, _ellipse(cfg["open_k"]), borderType=cv2.BORDER_CONSTANT, borderValue=0)
+    raw = cv2.morphologyEx(raw, cv2.MORPH_CLOSE, _ellipse(cfg["close_k"]), borderType=cv2.BORDER_CONSTANT, borderValue=0)
     raw = cv2.bitwise_and(raw, mask)
 
     # 7) Connected Component Labeling
@@ -179,7 +174,7 @@ def detect_defects(crop_bgr, mask, cfg=None, fruit_cfg=None):
     min_area = max(cfg["min_spot_area_px"], cfg["min_spot_area_ratio"] * fruit_area)
     defect_mask = np.zeros_like(mask)
     spots = []
-    for i in range(1, n_lab):  # 0 là nền
+    for i in range(1, n_lab):
         a = int(stats[i, cv2.CC_STAT_AREA])
         if a < min_area:
             continue
@@ -191,7 +186,57 @@ def detect_defects(crop_bgr, mask, cfg=None, fruit_cfg=None):
 
     # 8) tỉ lệ lỗi
     defect_area = int(sum(s["area"] for s in spots))
-    return dict(defect_mask=defect_mask,
-                defect_ratio=100.0 * defect_area / fruit_area,
-                n_spots=len(spots), defect_area_px=defect_area, spots=spots,
-                ref_bgr=tuple(float(x) for x in ref), threshold=thr, dist_map=dist)
+    res = dict(defect_mask=defect_mask,
+               defect_ratio=100.0 * defect_area / fruit_area,
+               n_spots=len(spots), defect_area_px=defect_area, spots=spots,
+               ref_bgr=tuple(float(x) for x in ref), threshold=thr, dist_map=dist)
+    if debug:
+        res["debug_steps"] = _build_defect_debug(
+            crop_bgr, mask, inner, inside, ref, cluster_def, ref_map, dist, raw, defect_mask, spots
+        )
+    return res
+
+# phục vụ ảnh tĩnh trên web
+def _build_defect_debug(crop_bgr, mask, inner, inside, ref, cluster_def, ref_map, dist, raw, defect_mask, spots):
+    bg = (32, 36, 48)
+    base = crop_bgr.copy()
+    base[mask == 0] = bg
+
+    # 2.3.1: Viền mask gốc (xanh) & viền inner sau khi gọt (vàng)
+    erode_vis = base.copy()
+    for cnt_mask, color in ((mask, (0, 255, 0)), (inner, (0, 255, 255))):
+        cnts, _ = cv2.findContours(cnt_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(erode_vis, cnts, -1, color, 2)
+
+    # 2.3.2: Ảnh phân cụm K-means (Xanh ngọc = Cụm lành, Đỏ = Cụm nghi hỏng)
+    kmeans_vis = base.copy()
+    healthy_zone = inside & ~cluster_def
+    kmeans_vis[healthy_zone] = (kmeans_vis[healthy_zone] * 0.4 + np.array([54, 188, 148]) * 0.6).astype(np.uint8)
+    kmeans_vis[cluster_def] = (kmeans_vis[cluster_def] * 0.35 + np.array([24, 72, 255]) * 0.65).astype(np.uint8)
+
+    # 2.3.3: Bản đồ màu lành cục bộ đã bù bóng đổ
+    ref_map_vis = np.clip(ref_map, 0, 255).astype(np.uint8)
+    ref_map_vis[~inside] = bg
+
+    # 2.3.4: Heatmap khoảng cách cục bộ sau khi trừ bóng đổ
+    d_u8 = np.clip(dist * 2.5, 0, 255).astype(np.uint8) * inside.astype(np.uint8)
+    dist_local_vis = cv2.applyColorMap(d_u8, cv2.COLORMAP_JET)
+
+    # 2.3.6: Ảnh tổng hợp cuối cùng + khung bbox từng vết
+    overlay = base.copy()
+    overlay[defect_mask > 0] = (0, 0, 255)
+    final_vis = cv2.addWeighted(base, 0.65, overlay, 0.35, 0)
+    for idx, s in enumerate(spots, 1):
+        x, y, w_box, h_box = s["bbox"]
+        cv2.rectangle(final_vis, (x, y), (x + w_box, y + h_box), (0, 255, 255), 1)
+        cv2.putText(final_vis, f"#{idx} ({s['area']}px)", (x, max(12, y - 4)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 255), 1)
+
+    return {
+        "2_erode_border_vis": erode_vis,
+        "3_kmeans_cluster_vis": kmeans_vis,
+        "4_local_ref_map_bgr": ref_map_vis,
+        "5_dist_local_heatmap": dist_local_vis,
+        "6_morphology_cleaned_mask": raw.copy(),
+        "7_final_overlay_bgr": final_vis,
+    }

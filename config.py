@@ -57,17 +57,17 @@ COLOR = dict(hist_bins=32)
 
 DEFECT = dict(
     smooth_k=5,             # Gaussian trước khi đo khoảng cách màu (Ch.2)
-    erode_px=4,             # co mặt nạ tối thiểu (pixel) để bỏ viền quả (viền hay tối do bóng)
-    erode_ratio=0.04,       # ... hoặc theo tỉ lệ với d_e (lấy giá trị lớn hơn)
+    erode_px=8,             # co mặt nạ tối thiểu (pixel) để bỏ viền quả (viền hay tối do bóng)
+    erode_ratio=0.06,       # ... hoặc theo tỉ lệ với d_e (lấy giá trị lớn hơn)
     ref_sigma_ratio=0.12,   # sigma Gaussian ước lượng màu lành cục bộ = ratio * d_e
     d0_min=45.0,            # D0 (Ch.3): khoảng cách RGB tới màu lành CỤC BỘ để coi là bất thường
     use_otsu=True,          # ngưỡng = max(Otsu(D), d0_min)  (Ch.6)
     d_global_min=85.0,      # khoảng cách RGB tới màu lành TOÀN QUẢ; bắt vùng thối rộng
     kmeans_sep_min=60.0,    # 2 cụm K-means cách nhau >= giá trị này (khi không phân biệt được bằng dải màu đạt) mới coi là 2 vùng
     dark_v=45,              # pixel quá tối (V < dark_v) coi là hỏng/thối đen
-    highlight_s_max=45,     # điểm chói phản quang (S thấp & V cao) KHÔNG tính là vết hỏng
-    highlight_v_min=210,
-    open_k=3, close_k=7,    # Morphology (Ch.5)
+    highlight_s_max=255,     # điểm chói phản quang (S thấp & V cao) KHÔNG tính là vết hỏng
+    highlight_v_min=175,
+    open_k=3, close_k=5,    # Morphology (Ch.5)
     min_spot_area_ratio=0.002,   # vết nhỏ hơn 0.2% diện tích quả bị bỏ
     min_spot_area_px=15,
 )

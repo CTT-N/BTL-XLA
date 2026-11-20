@@ -5,6 +5,8 @@ import config
 from m1_segmentation.pipeline_m1 import detect_fruits
 from m2_features.pipeline_md2 import extract_all_features
 from m3_classify_viz.classifier import classify_rule_based, load_thresholds
+from m2_features.defect_detection import detect_defects  # Nhớ import hàm detect_defects từ module 2 của bạn
+
 
 from pathlib import Path
 import sys
@@ -19,7 +21,22 @@ UPLOAD_DIR = WEB_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def _encode_image(image):
+def _encode_image(image, bbox=None, canvas_shape=None, mask=None, bg_color=(32, 36, 48)):
+    """Mã hoá ảnh sang PNG Base64. Tự động cắt theo mask và đặt lên khung chuẩn nếu truyền đủ tham số."""
+    if image.ndim == 2:
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    else:
+        image = image.copy()
+
+    if mask is not None:
+        image[mask == 0] = bg_color
+
+    if bbox is not None and canvas_shape is not None:
+        x, y, w, h = bbox
+        canvas = np.full(canvas_shape, bg_color, dtype=np.uint8)
+        canvas[y:y + h, x:x + w] = image
+        image = canvas
+
     ok, buf = cv2.imencode(".png", image)
     if not ok:
         raise RuntimeError("Không thể mã hoá ảnh")
@@ -50,6 +67,68 @@ def _dataset_images(fruit):
     return sorted(test_dir.glob("*/*.png"))
 
 
+def analyze_defect(obj, fruit, features, canvas_shape):
+    fruit_cfg = getattr(config, "FRUIT_CFG", {}).get(fruit)
+    def_res = detect_defects(obj.crop_bgr, obj.mask, cfg=config.DEFECT, fruit_cfg=fruit_cfg, debug=True)
+    dbg = def_res.get("debug_steps", {})
+    if not dbg:
+        return []
+
+    enc = lambda img: _encode_image(img, bbox=obj.bbox, canvas_shape=canvas_shape, mask=obj.mask)
+
+    return [
+        {
+            "title": "2.3.1 Gọt viền bóng rìa (Erosion)",
+            "description": "Co mặt nạ quả vào trong để loại bỏ viền bóng đổ gắt và nhiễu nền ở mép quả (viền xanh: gốc, vàng: giữ lại).",
+            "img": enc(dbg["2_erode_border_vis"]),
+            "metrics": [
+                {"label": "Erode px / ratio", "value": f"{config.DEFECT['erode_px']}px / {config.DEFECT['erode_ratio']*100:.1f}%"},
+            ],
+        },
+        {
+            "title": "2.3.2 Phân cụm màu toàn cục (K-means)",
+            "description": "Chia các pixel trong quả thành 2 cụm: vùng da lành (xanh ngọc) và vùng nghi hỏng diện rộng (đỏ).",
+            "img": enc(dbg["3_kmeans_cluster_vis"]),
+            "metrics": [
+                {"label": "Ref BGR", "value": f"({def_res['ref_bgr'][0]:.0f}, {def_res['ref_bgr'][1]:.0f}, {def_res['ref_bgr'][2]:.0f})"},
+                {"label": "Sep min", "value": f"{config.DEFECT['kmeans_sep_min']}"},
+            ],
+        },
+        {
+            "title": "2.3.3 Tái tạo màu lành cục bộ (Bù bóng đổ)",
+            "description": "Nội suy bề mặt da lành tự nhiên theo ánh sáng thực tế để triệt tiêu bóng đổ mượt mà không làm mất vết thâm.",
+            "img": enc(dbg["4_local_ref_map_bgr"]),
+            "metrics": [
+                {"label": "Sigma ratio", "value": f"{config.DEFECT['ref_sigma_ratio']}"},
+            ],
+        },
+        {
+            "title": "2.3.4 Bản đồ lệch màu cục bộ & Ngưỡng Otsu",
+            "description": "Đo khoảng cách màu giữa ảnh gốc và bề mặt đã bù bóng đổ; vết thâm sắc nét nổi bật lên màu đỏ/vàng.",
+            "img": enc(dbg["5_dist_local_heatmap"]),
+            "metrics": [
+                {"label": "Ngưỡng (thr)", "value": f"{def_res['threshold']:.1f}"},
+                {"label": "D0 min", "value": f"{config.DEFECT['d0_min']}"},
+            ],
+        },
+        {
+            "title": "2.3.5 Lọc nhiễu Morphology & Loại điểm chói",
+            "description": "Loại bỏ điểm phản quang lóa sáng (glare), xóa đốm nhiễu nhỏ (Opening) và lấp lỗ trống bên trong vết bệnh (Closing).",
+            "img": enc(dbg["6_morphology_cleaned_mask"]),
+            "metrics": [
+                {"label": "Open / Close", "value": f"{config.DEFECT['open_k']} / {config.DEFECT['close_k']} px"},
+            ],
+        },
+        {
+            "title": "2.3.6 Đóng khung & Lọc diện tích vết bệnh",
+            "description": "Dùng Connected Components đếm số lượng và loại bỏ các đốm quá nhỏ dưới ngưỡng diện tích tối thiểu.",
+            "img": _encode_image(dbg["7_final_overlay_bgr"], bbox=obj.bbox, canvas_shape=canvas_shape),
+            "metrics": [
+                {"label": "Số vết đạt chuẩn", "value": f"{features['n_spots']} vết"},
+                {"label": "Tỷ lệ hỏng", "value": f"{features['defect_ratio']:.2f}%"},
+            ],
+        },
+    ]
 
 def analyze_image(image_bgr, fruit):
     original = image_bgr.copy()
@@ -72,22 +151,7 @@ def analyze_image(image_bgr, fruit):
     raw_mask_vis = cv2.cvtColor(raw_mask, cv2.COLOR_GRAY2BGR)
     segmented_overlay = _overlay_mask(original, mask)
 
-    # 2.1 Ảnh màu chín
-    ripe_crop = obj.crop_bgr.copy()
-    ripe_crop[m2_masks["ripe_mask"] > 0] = (ripe_crop[m2_masks["ripe_mask"] > 0] * 0.45 + np.array([54, 188, 148]) * 0.55).astype(np.uint8)
-    ripe_crop[obj.mask == 0] = (32, 36, 48)
-    ripe_overlay = np.full(original.shape, (32, 36, 48), dtype=np.uint8)
-    ripe_overlay[y:y + h, x:x + w] = ripe_crop
-
-    # 2.2 Ảnh vết hỏng
-    defect_overlay = original.copy()
-    full_dm = np.zeros(original.shape[:2], dtype=np.uint8)
-    full_dm[y:y + h, x:x + w] = m2_masks["defect_mask"]
-    defect_overlay[full_dm > 0] = (24, 72, 255)
-    contours_def, _ = cv2.findContours(full_dm, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    cv2.drawContours(defect_overlay, contours_def, -1, (0, 230, 255), 2)
-
-    # 2.3 Ảnh hình dạng
+    # 2.1 Ảnh hình dạng
     shape_vis = original.copy()
     cv2.drawContours(shape_vis, [obj.contour + np.array([[[x, y]]])], -1, (35, 220, 170), 2)
     cv2.rectangle(shape_vis, (x, y), (x + w, y + h), (255, 200, 0), 1)
@@ -95,6 +159,23 @@ def analyze_image(image_bgr, fruit):
     if M["m00"] > 0:
         cv2.circle(shape_vis, (int(x + M["m10"] / M["m00"]), int(y + M["m01"] / M["m00"])), 4, (0, 0, 255), -1)
 
+    # 2.2 Ảnh màu chín
+    ripe_crop = obj.crop_bgr.copy()
+    ripe_crop[m2_masks["ripe_mask"] > 0] = (ripe_crop[m2_masks["ripe_mask"] > 0] * 0.45 + np.array([54, 188, 148]) * 0.55).astype(np.uint8)
+    ripe_crop[obj.mask == 0] = (32, 36, 48)
+    ripe_overlay = np.full(original.shape, (32, 36, 48), dtype=np.uint8)
+    ripe_overlay[y:y + h, x:x + w] = ripe_crop
+
+    # 2.3 Ảnh vết hỏng
+    defect_overlay = original.copy()
+    full_dm = np.zeros(original.shape[:2], dtype=np.uint8)
+    full_dm[y:y + h, x:x + w] = m2_masks["defect_mask"]
+    defect_overlay[full_dm > 0] = (24, 72, 255)
+    contours_def, _ = cv2.findContours(full_dm, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cv2.drawContours(defect_overlay, contours_def, -1, (0, 230, 255), 2)
+
+    defect_substeps = analyze_defect(obj, fruit, features, original.shape)
+   
     # 3. Ảnh kết quả
     grade_colors = {"LOAI 1": (54, 188, 148), "LOAI 2": (48, 170, 255), "LOAI 3": (72, 72, 255)}
     result = original.copy()
@@ -149,7 +230,16 @@ def analyze_image(image_bgr, fruit):
             "subtitle": "Màu chín · Khuyết tật · Hình dạng",
             "substep": [
                 {
-                    "title": "2.1 Đặc trưng màu sắc đạt chuẩn",
+                    "title": "2.1 Đặc trưng hình dạng",
+                    "description": "Trích xuất đường bao (Contour), khung bao (Bounding Box) và trọng tâm để tính độ tròn và diện tích.",
+                    "img": _encode_image(shape_vis),
+                    "metrics": [
+                        {"label": "Circularity", "value": f"{features['circularity']:.3f}"},
+                        {"label": "Diện tích", "value": f"{features['area_px']:,} px"},
+                    ],
+                },
+                {
+                    "title": "2.2 Đặc trưng màu sắc đạt chuẩn",
                     "description": "Tách vùng vỏ quả có sắc độ (Hue) và độ bão hòa đạt chuẩn chín bên trong mặt nạ quả.",
                     "img": _encode_image(ripe_overlay),
                     "metrics": [
@@ -158,22 +248,14 @@ def analyze_image(image_bgr, fruit):
                     ],
                 },
                 {
-                    "title": "2.2 Phát hiện khuyết tật (Defect)",
+                    "title": "2.3 Phát hiện khuyết tật (Defect)",
                     "description": "Khoanh vùng các đốm thâm, dập nát hoặc mốc dựa trên độ lệch màu và cường độ sáng bất thường.",
                     "img": _encode_image(defect_overlay),
                     "metrics": [
                         {"label": "Vết hỏng", "value": f"{features['defect_ratio']:.1f}%"},
                         {"label": "Số điểm vết", "value": f"{features['n_spots']} vết"},
                     ],
-                },
-                {
-                    "title": "2.3 Đặc trưng hình dạng (Shape)",
-                    "description": "Trích xuất đường bao (Contour), khung bao (Bounding Box) và trọng tâm để tính độ tròn và diện tích.",
-                    "img": _encode_image(shape_vis),
-                    "metrics": [
-                        {"label": "Circularity", "value": f"{features['circularity']:.3f}"},
-                        {"label": "Diện tích", "value": f"{features['area_px']:,} px"},
-                    ],
+                    "substep": defect_substeps,
                 },
             ]
         },

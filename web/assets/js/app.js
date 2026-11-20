@@ -57,30 +57,41 @@ function buildSlides(steps) {
     let prevImg = null;
     let prevTitle = "Ảnh gốc";
 
+    const pushSlide = (item, moduleIndex, step, isFirstOfAll) => {
+        const currentImg = item.img || step.after || step.before;
+        const beforeImg = item.before || prevImg || currentImg;
+        const beforeText = isFirstOfAll ? "Đầu vào gốc" : `Trước (${prevTitle})`;
+
+        slides.push({
+            moduleIndex,
+            kicker: `Bước ${step.number} · ${step.title}`,
+            title: item.title,
+            moduleBadge: step.subtitle,
+            beforeLabel: beforeText,
+            afterLabel: item.title,
+            before: beforeImg,
+            after: currentImg,
+            description: item.description || step.description || "",
+            metrics: item.metrics || step.metrics || [],
+        });
+
+        prevImg = currentImg;
+        prevTitle = item.title;
+    };
+
     steps.forEach((step, moduleIndex) => {
         if (Array.isArray(step.substep) && step.substep.length > 0) {
             step.substep.forEach((sub, subIndex) => {
-                const currentImg = sub.img || step.after || step.before;
-                const beforeImg = sub.before || prevImg || currentImg;
-                const beforeText = (moduleIndex === 0 && subIndex === 0)
-                    ? "Đầu vào gốc"
-                    : `Trước (${prevTitle})`;
-
-                slides.push({
-                    moduleIndex,
-                    kicker: `Bước ${step.number} · ${step.title}`,
-                    title: sub.title,
-                    moduleBadge: step.subtitle,
-                    beforeLabel: beforeText,
-                    afterLabel: sub.title,
-                    before: beforeImg,
-                    after: currentImg,
-                    description: sub.description || step.description || "",
-                    metrics: sub.metrics || step.metrics || [],
-                });
-
-                prevImg = currentImg;
-                prevTitle = sub.title;
+                // Nếu có các bước con cấp 3 (2.3.1 -> 2.3.6):
+                // Chạy hết các bước quá trình TRƯỚC, rồi mới hiển thị bước tổng kết 2.3 SAU CÙNG
+                if (Array.isArray(sub.substep) && sub.substep.length > 0) {
+                    sub.substep.forEach((nestedSub, nestedIdx) => {
+                        pushSlide(nestedSub, moduleIndex, step, moduleIndex === 0 && subIndex === 0 && nestedIdx === 0);
+                    });
+                    pushSlide(sub, moduleIndex, step, false);
+                } else {
+                    pushSlide(sub, moduleIndex, step, moduleIndex === 0 && subIndex === 0);
+                }
             });
         } else {
             const beforeImg = step.before || prevImg;

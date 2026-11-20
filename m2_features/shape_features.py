@@ -1,5 +1,5 @@
 """
-MODULE 2 - ĐẶC TRƯNG KÍCH THƯỚC & HÌNH DẠNG (Chương 7)
+ĐẶC TRƯNG KÍCH THƯỚC & HÌNH DẠNG
     Area A = số pixel của vùng
     Perimeter p = độ dài đường biên
     Circularity = 4*pi*A / p^2   (=1 với hình tròn hoàn hảo)
@@ -46,8 +46,6 @@ def compute_hu_moments(mask, log_scale=True):
 
 def extract_shape_features(mask, cfg=None):
     """
-    Input : mask uint8 {0,255} (h,w)
-    Output: dict {area_px, perimeter_px, circularity, d_e_px, aspect_ratio, hu}
     Lưu ý: Circularity được kẹp trong [0,1] vì lỗi lượng tử hoá pixel có thể làm nhích > 1.
     """
     cfg = cfg or config.SHAPE
