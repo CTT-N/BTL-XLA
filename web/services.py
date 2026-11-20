@@ -1,5 +1,6 @@
 import cv2
 import csv
+import time
 import numpy as np
 
 import config
@@ -139,19 +140,38 @@ def analyze_defect(obj, fruit, features, canvas_shape):
 
 def analyze_image(image_bgr, fruit):
     original = image_bgr.copy()
+    t0 = time.perf_counter()
 
     # 1. Pipeline M1
+    t_m1_start = time.perf_counter()
     debug_out = detect_fruits(original, return_debug=True)
+    t_m1 = time.perf_counter() - t_m1_start
+
     objs, mask, preprocessed, raw_mask = debug_out
     if not objs:
+        print(f"[BENCHMARK - 1 ảnh ({fruit}, {original.shape[1]}x{original.shape[0]})] "
+              f"M1: {t_m1*1000:.2f} ms ({t_m1:.4f} s) | Không phát hiện được quả")
         return {"ok": False, "error": "Không phát hiện được quả trong ảnh.", "steps": []}
     obj = max(objs, key=lambda o: cv2.countNonZero(o.mask))
 
     # 2. Pipeline M2
+    t_m2_start = time.perf_counter()
     features, m2_masks = extract_all_features(obj, fruit, return_debug=True)
+    t_m2 = time.perf_counter() - t_m2_start
 
     # 3. Pipeline M3
+    t_m3_start = time.perf_counter()
     label, reason = classify_rule_based(features, load_thresholds(fruit))
+    t_m3 = time.perf_counter() - t_m3_start
+
+    t_total = time.perf_counter() - t0
+    print(
+        f"[BENCHMARK - 1 ảnh ({fruit}, {original.shape[1]}x{original.shape[0]})] "
+        f"M1: {t_m1*1000:.2f} ms ({t_m1:.4f} s) | "
+        f"M2: {t_m2*1000:.2f} ms ({t_m2:.4f} s) | "
+        f"M3: {t_m3*1000:.2f} ms ({t_m3:.4f} s) | "
+        f"Tổng: {t_total*1000:.2f} ms ({t_total:.4f} s)"
+    )
 
     # --- Chỉ còn phần vẽ overlay hiển thị lên Web ---
     x, y, w, h = obj.bbox
@@ -332,6 +352,13 @@ def evaluate_dataset_splits(fruit, splits=("calib", "test")):
     failed_items = []
     total_processed = 0
 
+    # Biến cộng dồn thời gian (giây)
+    sum_t_m1 = 0.0
+    sum_t_m2 = 0.0
+    sum_t_m3 = 0.0
+    sum_t_pipe = 0.0
+    sample_shape = None
+
     for rel_in_data, meta in manifest.items():
         if meta["fruit"] != fruit or meta["split"] not in target_splits:
             continue
@@ -347,12 +374,20 @@ def evaluate_dataset_splits(fruit, splits=("calib", "test")):
         if img is None:
             continue
 
+        if sample_shape is None:
+            sample_shape = f"{img.shape[1]}x{img.shape[0]}"
+
         total_processed += 1
-        # Đường dẫn tương đối từ ROOT để tương thích với API /api/analyze-dataset
         rel_from_root = str(img_path.relative_to(ROOT)).replace("\\", "/")
         img_url = f"/dataset-file/{meta['split']}/{fruit}/{true_lbl}/{img_path.name}"
 
+        t0 = time.perf_counter()
+
+        # M1
+        t_m1_start = time.perf_counter()
         res_m1 = detect_fruits(img)
+        t_m1 = time.perf_counter() - t_m1_start
+
         objs = res_m1[0] if isinstance(res_m1, tuple) else res_m1
         if not objs:
             failed_items.append({
@@ -368,8 +403,23 @@ def evaluate_dataset_splits(fruit, splits=("calib", "test")):
             continue
 
         obj = max(objs, key=lambda o: cv2.countNonZero(o.mask))
+
+        # M2
+        t_m2_start = time.perf_counter()
         features = extract_all_features(obj, fruit)
+        t_m2 = time.perf_counter() - t_m2_start
+
+        # M3
+        t_m3_start = time.perf_counter()
         pred_lbl, reason = classify_rule_based(features, thresholds)
+        t_m3 = time.perf_counter() - t_m3_start
+
+        t_pipe = time.perf_counter() - t0
+
+        sum_t_m1 += t_m1
+        sum_t_m2 += t_m2
+        sum_t_m3 += t_m3
+        sum_t_pipe += t_pipe
 
         if pred_lbl not in pred_labels:
             pred_lbl = "LOAI 3"
@@ -389,9 +439,6 @@ def evaluate_dataset_splits(fruit, splits=("calib", "test")):
             "url": img_url,
         })
 
-    valid_total = total_processed - len(failed_items)
-
-
     # Quy đổi sang 4 thành phần Confusion Matrix nhị phân (Positive = Rotten / LOAI 3)
     tp = matrix_counts["rotten"]["LOAI 3"]
     fn = matrix_counts["rotten"]["LOAI 1"] + matrix_counts["rotten"]["LOAI 2"]
@@ -399,6 +446,17 @@ def evaluate_dataset_splits(fruit, splits=("calib", "test")):
     fp = matrix_counts["healthy"]["LOAI 3"]
 
     valid_total = tp + fn + tn + fp
+
+    if valid_total > 0:
+        avg_m1_ms = (sum_t_m1 / valid_total) * 1000
+        avg_m2_ms = (sum_t_m2 / valid_total) * 1000
+        avg_m3_ms = (sum_t_m3 / valid_total) * 1000
+        avg_tot_ms = (sum_t_pipe / valid_total) * 1000
+        print(
+            f"\n[BENCHMARK - {valid_total}/{total_processed} ảnh ({fruit}, splits={list(splits)}, size={sample_shape})]\n"
+            f"  • Trung bình / ảnh: M1 = {avg_m1_ms:.2f} ms | M2 = {avg_m2_ms:.2f} ms | M3 = {avg_m3_ms:.2f} ms | Tổng = {avg_tot_ms:.2f} ms\n"
+            f"  • Tổng toàn tập:    M1 = {sum_t_m1:.3f} s | M2 = {sum_t_m2:.3f} s | M3 = {sum_t_m3:.3f} s | Tổng = {sum_t_pipe:.3f} s\n"
+        )
     accuracy = round(100.0 * (tp + tn) / valid_total, 2) if valid_total > 0 else 0.0
     precision = round(100.0 * tp / (tp + fp), 2) if (tp + fp) > 0 else 0.0
     recall = round(100.0 * tp / (tp + fn), 2) if (tp + fn) > 0 else 0.0
