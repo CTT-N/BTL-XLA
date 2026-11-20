@@ -86,12 +86,12 @@ def analyze_defect(obj, fruit, features, canvas_shape):
             ],
         },
         {
-            "title": "2.3.2 Phân cụm màu toàn cục (K-means)",
-            "description": "Chia các pixel trong quả thành 2 cụm: vùng da lành (xanh ngọc) và vùng nghi hỏng diện rộng (đỏ).",
+            "title": "2.3.2 Phân cụm bất thường Saturation theo bán kính",
+            "description": "Khớp quy luật giảm độ bão hòa bậc 2 từ viền vào tâm khối cầu; vùng lệch chuẩn vượt ngưỡng được tách vào cụm nghi hỏng (đỏ).",
             "img": enc(dbg["3_kmeans_cluster_vis"]),
             "metrics": [
                 {"label": "Ref BGR", "value": f"({def_res['ref_bgr'][0]:.0f}, {def_res['ref_bgr'][1]:.0f}, {def_res['ref_bgr'][2]:.0f})"},
-                {"label": "Sep min", "value": f"{config.DEFECT['kmeans_sep_min']}"},
+                {"label": "Bậc / Ngưỡng S", "value": f"ρ^{config.DEFECT['radial_sat_power']} / {config.DEFECT['radial_sat_thr']}"},
             ],
         },
         {

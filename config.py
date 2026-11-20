@@ -63,7 +63,9 @@ DEFECT = dict(
     d0_min=45.0,            # D0 (Ch.3): khoảng cách RGB tới màu lành CỤC BỘ để coi là bất thường
     use_otsu=True,          # ngưỡng = max(Otsu(D), d0_min)  (Ch.6)
     d_global_min=85.0,      # khoảng cách RGB tới màu lành TOÀN QUẢ; bắt vùng thối rộng
-    kmeans_sep_min=60.0,    # 2 cụm K-means cách nhau >= giá trị này (khi không phân biệt được bằng dải màu đạt) mới coi là 2 vùng
+    radial_sat_power=2.0,
+    radial_sat_thr=28.0,
+    radial_val_thr=20.0,
     dark_v=45,              # pixel quá tối (V < dark_v) coi là hỏng/thối đen
     highlight_s_max=255,     # điểm chói phản quang (S thấp & V cao) KHÔNG tính là vết hỏng
     highlight_v_min=175,

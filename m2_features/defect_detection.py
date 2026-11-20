@@ -79,6 +79,50 @@ def estimate_healthy_reference(pix_bgr, fruit_cfg, sep_min, max_samples=4000):
         h = int(np.argmax(sizes))
     return np.median(members[h], axis=0), True, np.median(members[1 - h], axis=0)
 
+def _fit_radial_anomaly(hsv, mask, inside, fit_mask, cfg):
+    """
+    Khớp quy luật hình cầu từ tâm (rho=0) ra viền (rho=1) dựa trên S và V:
+      - Saturation tăng ra viền: S_exp = a_s + b_s * (rho^power)  (b_s >= 0)
+      - Value giảm ra viền:      V_exp = a_v + b_v * (rho^power)  (b_v <= 0)
+    Đẩy vào `cluster_def` nếu:
+      1) Độ bão hòa lệch khỏi đường cong hình cầu: |S - S_exp| > radial_sat_thr
+      2) HOẶC tối hơn đường cong sáng kỳ vọng của hình cầu: V < V_exp - radial_val_thr
+    """
+    power = cfg.get("radial_sat_power", 2.0)
+    sat_thr = cfg.get("radial_sat_thr", 28.0)
+    val_thr = cfg.get("radial_val_thr", 20.0)
+
+    dist_to_edge = cv2.distanceTransform(mask, cv2.DIST_L2, 5)
+    max_d = float(dist_to_edge.max())
+    if max_d < 1.0 or fit_mask.sum() < 50:
+        return np.zeros(mask.shape, dtype=bool)
+
+    rho = np.clip(1.0 - (dist_to_edge / max_d), 0.0, 1.0)
+    x_feat = rho ** power
+
+    s_f = hsv[..., 1].astype(np.float32)
+    v_f = hsv[..., 2].astype(np.float32)
+
+    # 1. Fit Saturation trên vùng fit_mask
+    b_s, a_s = np.polyfit(x_feat[fit_mask], s_f[fit_mask], 1)
+    if b_s < 0:
+        a_s, b_s = float(np.median(s_f[fit_mask])), 0.0
+    s_exp = a_s + b_s * x_feat #độ bão hòa kì vọng
+
+    # 2. Fit Value bền vững: loại 25% pixel tối nhất để mảng thối không kéo tụt đường chuẩn V_exp
+    v_vals = v_f[fit_mask]
+    bright_enough = fit_mask & (v_f >= np.percentile(v_vals, 25))
+    v_fit_mask = bright_enough if bright_enough.sum() >= 50 else fit_mask
+
+    b_v, a_v = np.polyfit(x_feat[v_fit_mask], v_f[v_fit_mask], 1)
+    if b_v > 0:
+        a_v, b_v = float(np.median(v_f[v_fit_mask])), 0.0
+    v_exp = a_v + b_v * x_feat
+
+    cond_sat = np.abs(s_f - s_exp) > sat_thr
+    cond_dark = v_f < (v_exp - val_thr)
+
+    return (cond_sat | cond_dark) & inside
 
 def estimate_local_reference(img_f32, inside, sigma, init_w, d_thr, fallback, n_iter=3):
     """
@@ -125,25 +169,33 @@ def detect_defects(crop_bgr, mask, cfg=None, fruit_cfg=None, debug=False):
         inner = mask.copy()
     inside = inner > 0
 
-    # Tính trước HSV & mặt nạ điểm chói (glare) để loại khỏi K-means và nội suy màu lành
+    # 3) Phân cụm Lành / Lỗi theo quy luật giảm Saturation bậc 2 của hình cầu
     hsv = cv2.cvtColor(smooth, cv2.COLOR_BGR2HSV)
     v = hsv[..., 2]
-    highlight = (hsv[..., 1] < cfg["highlight_s_max"]) & (v > cfg["highlight_v_min"])
-    valid_inside = inside & ~highlight
-    if valid_inside.sum() < 50:
-        valid_inside = inside
+    hl_raw = ((hsv[..., 1] < cfg["highlight_s_max"]) & (v > cfg["highlight_v_min"])).astype(np.uint8) * 255
+    highlight = cv2.dilate(hl_raw, _ellipse(5), borderType=cv2.BORDER_CONSTANT, borderValue=0) > 0
 
-    # 3) màu lành toàn quả (chỉ học trên pixel không bị lóa sáng)
-    ref, split, c_def = estimate_healthy_reference(smooth[valid_inside], fruit_cfg, sep_min=cfg["kmeans_sep_min"])
+    fit_mask = inside & ~highlight
+    if fit_mask.sum() < 50:
+        fit_mask = inside
+
+    # Vòng 1: Fit sơ bộ trên toàn bộ vùng không chói
+    cluster_def = _fit_radial_anomaly(hsv, mask, inside, fit_mask, cfg) & ~highlight
+
+    # Vòng 2 (Refit): Fit lại đường cong hình cầu trên vùng SẠCH (đã bỏ cluster_def)
+    clean_fit = fit_mask & ~cluster_def
+    if clean_fit.sum() >= 50:
+        cluster_def = _fit_radial_anomaly(hsv, mask, inside, clean_fit, cfg) & ~highlight
+
+    # Suy ra màu lành đại diện `ref` và khoảng cách toàn cục `dist_g` từ cụm lành còn lại
+    healthy_pixels = smooth_f[clean_fit if clean_fit.sum() >= 50 else fit_mask]
+    ref = np.median(healthy_pixels, axis=0).astype(np.float32)
     dist_g = np.sqrt(((smooth_f - ref[None, None, :]) ** 2).sum(axis=2))
-    cluster_def = np.zeros(mask.shape, bool)
-    if split and c_def is not None and dist_g is not None:
-        dist_def = np.sqrt(((smooth_f - c_def[None, None, :]) ** 2).sum(axis=2))
-        cluster_def = (dist_def < dist_g) & valid_inside
+    split = bool(cluster_def.any())
 
     # 4) màu lành cục bộ (bù bóng đổ - loại bỏ cả cụm hỏng lẫn điểm chói khi nội suy)
     sigma = max(5.0, cfg["ref_sigma_ratio"] * d_e)
-    init_w = (valid_inside & ~cluster_def) if split else valid_inside
+    init_w = (fit_mask & ~cluster_def) if split else fit_mask
     if init_w.sum() < 50:
         init_w = inside
     ref_map = estimate_local_reference(smooth_f, inside, sigma, init_w, cfg["d0_min"], ref)
@@ -152,7 +204,7 @@ def detect_defects(crop_bgr, mask, cfg=None, fruit_cfg=None, debug=False):
     dist = np.sqrt(((smooth_f - ref_map) ** 2).sum(axis=2))
     thr = float(cfg["d0_min"])
     if cfg["use_otsu"]:
-        d8 = np.clip(dist[valid_inside], 0, 255).astype(np.uint8).reshape(-1, 1)
+        d8 = np.clip(dist[fit_mask], 0, 255).astype(np.uint8).reshape(-1, 1)
         otsu_t, _ = cv2.threshold(d8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         thr = max(thr, float(otsu_t))
 
@@ -208,7 +260,7 @@ def _build_defect_debug(crop_bgr, mask, inner, inside, ref, cluster_def, ref_map
         cnts, _ = cv2.findContours(cnt_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         cv2.drawContours(erode_vis, cnts, -1, color, 2)
 
-    # 2.3.2: Ảnh phân cụm K-means (Xanh ngọc = Cụm lành, Đỏ = Cụm nghi hỏng)
+    # 2.3.2: Ảnh phân cụm (Xanh ngọc = Cụm lành, Đỏ = Cụm nghi hỏng)
     kmeans_vis = base.copy()
     healthy_zone = inside & ~cluster_def
     kmeans_vis[healthy_zone] = (kmeans_vis[healthy_zone] * 0.4 + np.array([54, 188, 148]) * 0.6).astype(np.uint8)
